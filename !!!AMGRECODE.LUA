@@ -1,12 +1,17 @@
-﻿local base64 = require("gamesense/base64")
-local clipboard = require("gamesense/clipboard")
-local json = require("json")
-local csgo_weapons = require("gamesense/csgo_weapons")
-local trace = require("gamesense/trace")
-local entity_lib = require("gamesense/entity")
-local pui = require("gamesense/pui")
-local vector = require("vector")
-local ffi = require("ffi")
+local libs = {
+    base64 = require("gamesense/base64"),
+    clipboard = require("gamesense/clipboard"),
+    json = require("json"),
+    csgo_weapons = require("gamesense/csgo_weapons"),
+    trace = require("gamesense/trace"),
+    entity_lib = require("gamesense/entity"),
+    pui = require("gamesense/pui"),
+    vector = require("vector"),
+    ffi = require("ffi")
+}
+local base64, clipboard, json = libs.base64, libs.clipboard, libs.json
+local csgo_weapons, trace, entity_lib = libs.csgo_weapons, libs.trace, libs.entity_lib
+local pui, vector, ffi = libs.pui, libs.vector, libs.ffi
 local utils = {}
 function utils.clamp(val, min, max)
     if max < min then min, max = max, min end
@@ -250,7 +255,7 @@ menu.tab = pui_group:combobox("\n\aFFFFFF00 ", {
     string.char(0xEE, 0x87, 0x81) .. " Config"
 })
 menu.info = {
-    title = pui_group:label("═══════════════════════════════"),
+    title = pui_group:label("══════════════════════════════"),
     welcome = pui_group:label("User: " .. steam_name),
     spacer1 = pui_group:label(" "),
     script_name = pui_group:label("Script: AMGSENSE"),
@@ -260,7 +265,7 @@ menu.info = {
     spacer3 = pui_group:label(" "),
     features = pui_group:label("Features: Advanced Anti-Aim | Ragebot | Visuals"),
     spacer4 = pui_group:label(" "),
-    footer = pui_group:label("═══════════════════════════════"),
+    footer = pui_group:label("══════════════════════════════"),
 }
 local hideshots_weapon_list = { 'Auto Snipers', 'AWP', 'Scout', 'Desert Eagle', 'Pistols', 'SMG', 'Rifles' }
 local hideshots_state_list = { 'Stand', 'Move', 'Crouch', 'C-Move', 'Air', 'C-Air', 'Slow' }
@@ -285,12 +290,9 @@ local rage_refs = {
 local onshot_antiaim_ref = {ui.reference("AA", "Other", "On shot anti-aim")}
 local slowmotion_checkbox_ref, slowmotion_hotkey_ref = ui.reference("AA", "Other", "Slow motion")
 local slowmotion_limit_ref = ui.new_slider("AA", "Other", "Slow motion limit", 1, 57, 50, true, "", 1, {[57] = "Max"})
-local math_sqrt = math.sqrt
 local air_stop = {}
 air_stop.last_speed = 0
 air_stop.stop_frames = 0
-air_stop.normalize_angle = utils.normalize_angle  
-air_stop.get_distance = utils.distance_3d  
 function air_stop.is_weapon_enabled(me)
     local weapon = entity.get_prop(me, "m_hActiveWeapon")
     if not weapon then return false end
@@ -316,7 +318,7 @@ function air_stop.will_be_visible_soon(me)
         local e = enemies[i]
         if entity.is_alive(e) and not entity.is_dormant(e) then
             local e_x, e_y, e_z = entity.get_prop(e, "m_vecOrigin")
-            local dist = air_stop.get_distance(eye_x, eye_y, eye_z, e_x, e_y, e_z)
+            local dist = utils.distance_3d(eye_x, eye_y, eye_z, e_x, e_y, e_z)
             if dist <= max_range then
                 for _, hb_id in ipairs(hitboxes) do
                     local hx, hy, hz = entity.hitbox_position(e, hb_id)
@@ -351,14 +353,14 @@ function air_stop.process(cmd)
     end
     local vx = entity.get_prop(me, "m_vecVelocity[0]")
     local vy = entity.get_prop(me, "m_vecVelocity[1]")
-    local speed = math_sqrt(vx * vx + vy * vy)
+    local speed = math.sqrt(vx * vx + vy * vy)
     if speed <= 0 then 
         air_stop.stop_frames = 0
         return 
     end
     local _, yaw = client.camera_angles()
     local vel_yaw = math.deg(math.atan2(vy, vx))
-    local diff = air_stop.normalize_angle(yaw - vel_yaw)
+    local diff = utils.normalize_angle(yaw - vel_yaw)
     local move_yaw = math.rad(diff)
     local base_force = 600
     local force_limit = -base_force
@@ -416,7 +418,6 @@ local hitbox_to_hitgroup = {
     [HITBOX.RIGHT_FOREARM] = HITGROUP.RIGHTARM, [HITBOX.LEFT_FOREARM] = HITGROUP.LEFTARM
 }
 local priority_hitboxes = {HITBOX.HEAD, HITBOX.UPPER_CHEST, HITBOX.STOMACH}
-local pb_clamp = utils.clamp 
 local function pb_get_damage()
     local mindmg_ref = ui.reference("rage", "aimbot", "minimum damage")
     local ovr_ref = {ui.reference("rage", "aimbot", "minimum damage override")}
@@ -434,7 +435,7 @@ local function pb_get_lerp_time()
     local interp = cvar.cl_interp:get_float()
     local min_ratio = cvar.sv_client_min_interp_ratio:get_float()
     local max_ratio = cvar.sv_client_max_interp_ratio:get_float()
-    if min_ratio and max_ratio and min_ratio ~= 1 then ratio = pb_clamp(ratio, min_ratio, max_ratio) end
+    if min_ratio and max_ratio and min_ratio ~= 1 then ratio = utils.clamp(ratio, min_ratio, max_ratio) end
     return math.max(interp, ratio / updaterate)
 end
 local pb_native = {
@@ -448,8 +449,8 @@ local function pb_get_max_backtrack_ticks()
     local curtime_delta = globals.curtime() - math.floor(entity.get_prop(entity.get_local_player(), "m_nTickBase") * globals.tickinterval() - maxunlag)
     local latency_in = pb_native.GetLatency(netchan, 0)
     local latency_out = pb_native.GetLatency(netchan, 1)
-    local lerp = pb_clamp(latency_in + latency_out + pb_get_lerp_time(), 0, maxunlag)
-    return pb_clamp(maxunlag + lerp * 2, 0, curtime_delta) / globals.tickinterval()
+    local lerp = utils.clamp(latency_in + latency_out + pb_get_lerp_time(), 0, maxunlag)
+    return utils.clamp(maxunlag + lerp * 2, 0, curtime_delta) / globals.tickinterval()
 end
 local function pb_can_fire()
     local lp = entity.get_local_player()
@@ -559,7 +560,7 @@ local function pb_find_best_peek_point(threat_info, points, sample_count)
     local maxs = vector(entity.get_prop(lp, "m_vecMaxs"))
     local center_offset = vector((mins.x + maxs.x) / 2, (mins.y + maxs.y) / 2, (mins.z + maxs.z) / 2 + 10)
     for i = 1, total_points, step do
-        local idx = pb_clamp(i, 1, total_points)
+        local idx = utils.clamp(i, 1, total_points)
         local start_pos = lp_origin + center_offset
         local end_pos = points[idx] + center_offset
         local result = trace.hull(start_pos, end_pos, mins, maxs, {type = "TRACE_EVERYTHING", mask = "MASK_SHOT", skip = teammates})
@@ -801,7 +802,7 @@ local function modify_velocity(cmd, goalspeed)
     if goalspeed <= 0 then
         return
     end
-    local minimalspeed = math_sqrt((cmd.forwardmove * cmd.forwardmove) + (cmd.sidemove * cmd.sidemove))
+    local minimalspeed = math.sqrt((cmd.forwardmove * cmd.forwardmove) + (cmd.sidemove * cmd.sidemove))
     if minimalspeed <= 0 then
         return
     end
@@ -1763,7 +1764,6 @@ ui.set_callback(menu.misc.clantag.ref, function()
         show_tab(current_tab)
     end
 end)
-local table_contains = utils.table_contains  
 on_use = {
     enabled = false,
     start_time = globals.realtime()
@@ -3881,7 +3881,6 @@ local function calc_body_yaw(vals, yaw_offset)
     end
     return 0
 end
-local normalize_yaw = utils.normalize_angle  
 local movement = {
     globals = {
         nade = 0,
@@ -4214,7 +4213,7 @@ client.set_event_callback('setup_command', function(cmd)
             ui.set(aa_ref.yaw[1], "180")
             local yaw_base_offset = on_use.enabled and 180 or 0
             local final_yaw = yaw_offset + yaw_base_offset
-            local clamped_yaw = math.max(-180, math.min(180, normalize_yaw(final_yaw)))
+            local clamped_yaw = math.max(-180, math.min(180, utils.normalize_angle(final_yaw)))
             ui.set(aa_ref.yaw[2], clamped_yaw)
         end
         
@@ -4258,13 +4257,13 @@ client.set_event_callback('setup_command', function(cmd)
     end
     if aa_ref.yaw[1] and aa_ref.yaw[2] then
         ui.set(aa_ref.yaw[1], "180")
-        ui.set(aa_ref.yaw[2], normalize_yaw(final_yaw))
+        ui.set(aa_ref.yaw[2], utils.normalize_angle(final_yaw))
     end
     
     if body_yaw_offset ~= 0 and globals.chokedcommands() == 0 then
         cmd.allow_send_packet = false
         cmd.no_choke = false
-        ui.set(aa_ref.yaw[2], normalize_yaw(final_yaw + body_yaw_offset))
+        ui.set(aa_ref.yaw[2], utils.normalize_angle(final_yaw + body_yaw_offset))
     end
 end)
 local function toticks(seconds)
@@ -5068,7 +5067,7 @@ local function animate_info_labels()
     
     menu.welcome_label:set(blue_white_gradient("Welcome to AMGSENSE", -5))
     
-    local separator = "═══════════════════════════════"
+    local separator = "══════════════════════════════"
     menu.info.title:set(blue_white_gradient(separator, 0))
     menu.info.welcome:set("\aFFFFFFFF" .. "User: " .. blue_white_gradient(steam_name, 0))
     menu.info.script_name:set("\aFFFFFFFF" .. "Script: " .. blue_white_gradient("AMGSENSE", 5))
@@ -5077,9 +5076,108 @@ local function animate_info_labels()
     menu.info.features:set("\aFFFFFFFF" .. "Features: " .. blue_white_gradient("Advanced Anti-Aim | Ragebot | Visuals", 20))
     menu.info.footer:set(blue_white_gradient(separator, 30))
 end
+
+local ui_decor = {
+    alpha = 0,
+    pulse = 0,
+    glow_cache = {alpha = -1, values = {}},
+    scan_offset = 0,
+    scan_alpha = 0,
+    text_cache = {},
+    logo = nil
+}
+
+do
+    local http = require("gamesense/http")
+    local success_local, content = pcall(readfile, "AMGSENSE_reference.png")
+    if success_local and content then
+        ui_decor.logo = renderer.load_png(content, 1867, 1355)
+    end
+    if not ui_decor.logo then
+        http.get("https://raw.githubusercontent.com/amgsense/AMGSENSE/refs/heads/main/AMGSENSE.png", function(success, response)
+            if success and response.status == 200 then
+                ui_decor.logo = renderer.load_png(response.body, 1867, 1355)
+            end
+        end)
+    end
+end
+
+local function get_glow_alphas(a)
+    if ui_decor.glow_cache.alpha == a then
+        return ui_decor.glow_cache.values
+    end
+    local values = ui_decor.glow_cache.values
+    for i = 1, 8 do
+        values[i] = a * 255 * (100 / (i * i * 0.08 + i)) / 255
+    end
+    ui_decor.glow_cache.alpha = a
+    return values
+end
+
+local function paint_menu_decor()
+    if ui.is_menu_open() then
+        ui_decor.alpha = math.min(1, ui_decor.alpha + globals.frametime() * 4)
+    else
+        ui_decor.alpha = math.max(0, ui_decor.alpha - globals.frametime() * 4)
+        if ui_decor.alpha < 0.01 then return end
+    end
+    
+    local a = ui_decor.alpha
+    local menu_x, menu_y = ui.menu_position()
+    local menu_w, menu_h = ui.menu_size()
+    local top_h = 60
+    local top_y = menu_y - top_h
+    
+    ui_decor.scan_offset = (ui_decor.scan_offset + globals.frametime() * 20) % top_h
+    ui_decor.scan_alpha = math.floor(4.5 * a)
+    for i = 0, top_h, 10 do
+        renderer.rectangle(menu_x, top_y + ((i + ui_decor.scan_offset) % top_h), menu_w, 1, 0, 180, 255, ui_decor.scan_alpha)
+    end
+    
+    if ui_decor.logo then
+        ui_decor.pulse = (math.sin(globals.realtime() * 2) + 1) * 0.5
+        local logo_x, logo_y, logo_size = menu_x + 15, top_y + 5, 50
+        local pulse_size = logo_size + ui_decor.pulse * 4
+        local pulse_offset = (pulse_size - logo_size) * 0.5
+        
+        renderer.texture(ui_decor.logo, logo_x - pulse_offset, logo_y - pulse_offset, pulse_size, pulse_size, 100, 220, 255, math.floor(40 * a * ui_decor.pulse), "f")
+        renderer.texture(ui_decor.logo, logo_x, logo_y, logo_size, logo_size, 200, 240, 255, math.floor(255 * a), "f")
+        
+        local title_x = logo_x + 68
+        local tc = ui_decor.text_cache[a] or {main = math.floor(255 * a), sub = math.floor(217 * a), glow = math.floor(51 * a)}
+        ui_decor.text_cache[a] = tc
+        
+        renderer.text(title_x + 1, top_y + 8, 100, 220, 255, tc.glow, "b+", 0, "AMGSENSE")
+        renderer.text(title_x, top_y + 8, 200, 240, 255, tc.main, "b+", 0, "AMGSENSE")
+        renderer.text(title_x + 1, top_y + 38, 100, 220, 255, tc.glow, "b", 0, "BEST  RECODE")
+        renderer.text(title_x, top_y + 38, 200, 240, 255, tc.sub, "b", 0, "BEST  RECODE")
+    end
+    
+    local frame_x, frame_y = menu_x - 2, top_y - 2
+    local frame_w, frame_h = menu_w + 4, menu_h + top_h + 4
+    
+    if a > 0.15 then
+        local glow_alphas = get_glow_alphas(a)
+        for i = 1, 8 do
+            local ga = glow_alphas[i]
+            renderer.rectangle(frame_x, frame_y - i, frame_w, 1, 0, 180, 255, ga)
+            renderer.rectangle(frame_x, frame_y + frame_h + i - 1, frame_w, 1, 0, 180, 255, ga)
+            renderer.rectangle(frame_x - i, frame_y, 1, frame_h, 0, 180, 255, ga)
+            renderer.rectangle(frame_x + frame_w + i - 1, frame_y, 1, frame_h, 0, 180, 255, ga)
+        end
+    end
+    
+    local ba = math.floor(60 * a)
+    renderer.rectangle(frame_x, frame_y, frame_w, 1, 255, 255, 255, ba)
+    renderer.rectangle(frame_x, frame_y + frame_h - 1, frame_w, 1, 255, 255, 255, ba)
+    renderer.rectangle(frame_x, frame_y, 1, frame_h, 255, 255, 255, ba)
+    renderer.rectangle(frame_x + frame_w - 1, frame_y, 1, frame_h, 255, 255, 255, ba)
+end
+
 client.set_event_callback('paint_ui', function()
     hide_aa(false)
     animate_info_labels()
+    paint_menu_decor()
     
     if aa_ref.enabled then
         ui.set(aa_ref.enabled, true)
@@ -5094,7 +5192,6 @@ end)
 client.set_event_callback('shutdown', function()
     hide_aa(true)
 end)
-draw_rounded_rect = utils.draw_rounded_rect  
 local wm = {
     alpha = 0, fps = 0, ping = 0, time = "", tick = 0, content_alpha = 0
 }
@@ -5175,8 +5272,8 @@ local function render_watermark()
             renderer.rectangle(box_x + header_box_w + i - 1, box_y + radius, 1, header_box_h - radius * 2, ar, ag, ab, glow_alpha)
         end
     end
-    draw_rounded_rect(box_x, box_y, header_box_w, header_box_h, radius, 18, 18, 18, bg_a, 0, 0, 0, 0)
-    draw_rounded_rect(box_x, box_y, header_box_w, header_box_h, radius, 0, 0, 0, 0, 255, 255, 255, math.floor(60 * a))
+    utils.draw_rounded_rect(box_x, box_y, header_box_w, header_box_h, radius, 18, 18, 18, bg_a, 0, 0, 0, 0)
+    utils.draw_rounded_rect(box_x, box_y, header_box_w, header_box_h, radius, 0, 0, 0, 0, 255, 255, 255, math.floor(60 * a))
     local text_x = box_x + padding_x
     local text_y = box_y + padding_y
     for i = 1, #header do
@@ -5204,8 +5301,8 @@ local function render_watermark()
                 renderer.rectangle(content_x + content_box_w + i - 1, box_y + radius, 1, header_box_h - radius * 2, ar, ag, ab, glow_alpha)
             end
         end
-        draw_rounded_rect(content_x, box_y, content_box_w, header_box_h, radius, 18, 18, 18, math.floor(bg_a * ca), 0, 0, 0, 0)
-        draw_rounded_rect(content_x, box_y, content_box_w, header_box_h, radius, 0, 0, 0, 0, 255, 255, 255, math.floor(60 * a * ca))
+        utils.draw_rounded_rect(content_x, box_y, content_box_w, header_box_h, radius, 18, 18, 18, math.floor(bg_a * ca), 0, 0, 0, 0)
+        utils.draw_rounded_rect(content_x, box_y, content_box_w, header_box_h, radius, 0, 0, 0, 0, 255, 255, 255, math.floor(60 * a * ca))
         local ctx = content_x + padding_x
         local cty = box_y + padding_y
         for i, item in ipairs(items) do
@@ -5310,8 +5407,8 @@ local function render_spectators()
             renderer.rectangle(box_x + header_box_w + i - 1, box_y + radius, 1, header_box_h - radius * 2, ar, ag, ab, glow_alpha)
         end
     end
-    draw_rounded_rect(box_x, box_y, header_box_w, header_box_h, radius, 18, 18, 18, bg_a, 0, 0, 0, 0)
-    draw_rounded_rect(box_x, box_y, header_box_w, header_box_h, radius, 0, 0, 0, 0, 255, 255, 255, math.floor(60 * a))
+    utils.draw_rounded_rect(box_x, box_y, header_box_w, header_box_h, radius, 18, 18, 18, bg_a, 0, 0, 0, 0)
+    utils.draw_rounded_rect(box_x, box_y, header_box_w, header_box_h, radius, 0, 0, 0, 0, 255, 255, 255, math.floor(60 * a))
     local text_x = box_x + padding_x
     local text_y = box_y + padding_y
     for i = 1, #header do
@@ -5340,8 +5437,8 @@ local function render_spectators()
                 renderer.rectangle(box_x + header_box_w + i - 1, content_y + radius, 1, content_box_h - radius * 2, ar, ag, ab, glow_alpha)
             end
         end
-        draw_rounded_rect(box_x, content_y, header_box_w, content_box_h, radius, 18, 18, 18, bg_a, 0, 0, 0, 0)
-        draw_rounded_rect(box_x, content_y, header_box_w, content_box_h, radius, 0, 0, 0, 0, 255, 255, 255, math.floor(60 * a))
+        utils.draw_rounded_rect(box_x, content_y, header_box_w, content_box_h, radius, 18, 18, 18, bg_a, 0, 0, 0, 0)
+        utils.draw_rounded_rect(box_x, content_y, header_box_w, content_box_h, radius, 0, 0, 0, 0, 255, 255, 255, math.floor(60 * a))
         local name_y = content_y + padding_y
         for i, name in ipairs(specs) do
             renderer.text(box_x + padding_x, name_y, ar, ag, ab, math.floor(255 * a), "", 0, "")
@@ -5718,8 +5815,8 @@ local function render_hotkeys()
             renderer.rectangle(box_x + header_box_w + i - 1, box_y + radius, 1, header_box_h - radius * 2, ar, ag, ab, glow_alpha)
         end
     end
-    draw_rounded_rect(box_x, box_y, header_box_w, header_box_h, radius, 18, 18, 18, bg_a, 0, 0, 0, 0)
-    draw_rounded_rect(box_x, box_y, header_box_w, header_box_h, radius, 0, 0, 0, 0, 255, 255, 255, math.floor(60 * a))
+    utils.draw_rounded_rect(box_x, box_y, header_box_w, header_box_h, radius, 18, 18, 18, bg_a, 0, 0, 0, 0)
+    utils.draw_rounded_rect(box_x, box_y, header_box_w, header_box_h, radius, 0, 0, 0, 0, 255, 255, 255, math.floor(60 * a))
     local text_x = box_x + (header_box_w - header_w) / 2
     local text_y = box_y + padding_y
     for i = 1, #header do
@@ -5750,8 +5847,8 @@ local function render_hotkeys()
                 renderer.rectangle(box_x + header_box_w + i - 1, content_y + radius, 1, actual_content_h - radius * 2, ar, ag, ab, glow_alpha)
             end
         end
-        draw_rounded_rect(box_x, content_y, header_box_w, actual_content_h, radius, 18, 18, 18, bg_a, 0, 0, 0, 0)
-        draw_rounded_rect(box_x, content_y, header_box_w, actual_content_h, radius, 0, 0, 0, 0, 255, 255, 255, math.floor(60 * a))
+        utils.draw_rounded_rect(box_x, content_y, header_box_w, actual_content_h, radius, 18, 18, 18, bg_a, 0, 0, 0, 0)
+        utils.draw_rounded_rect(box_x, content_y, header_box_w, actual_content_h, radius, 0, 0, 0, 0, 255, 255, 255, math.floor(60 * a))
         local item_y = content_y + content_padding_top
         for i, item in ipairs(active_hotkeys) do
             renderer.text(box_x + padding_x, item_y, 200, 200, 200, math.floor(255 * a), "", 0, item.name)
@@ -5842,9 +5939,6 @@ local function parse_colored_text(text)
     end
     return list, count
 end
-
-local utf8_chars = utils.utf8_chars 
-local draw_log_rounded_rect = utils.draw_rounded_rect 
 
 local function has_notify_output() return menu.visual.logs_select:get("Notify") end
 local function has_screen_output() return menu.visual.logs_select:get("Screen") end
@@ -5968,9 +6062,9 @@ local function paint_screen_logs()
             local box_x, box_y = pos_x - box_w / 2, pos_y - box_h / 2
             local bg_a = math.floor(225 * alpha / 4)
             draw_screen_log_glow(box_x, box_y, box_w, box_h, s.radius, r, g, b, alpha)
-            draw_log_rounded_rect(box_x, box_y, box_w, box_h, s.radius, 18, 18, 18, bg_a, 0, 0, 0, 0)
-            draw_log_rounded_rect(box_x, box_y, box_w, box_h, s.radius, 0, 0, 0, 0, 255, 255, 255, math.floor(60 * alpha))
-            local chars = utf8_chars(text)
+            utils.draw_rounded_rect(box_x, box_y, box_w, box_h, s.radius, 18, 18, 18, bg_a, 0, 0, 0, 0)
+            utils.draw_rounded_rect(box_x, box_y, box_w, box_h, s.radius, 0, 0, 0, 0, 255, 255, 255, math.floor(60 * alpha))
+            local chars = utils.utf8_chars(text)
             local char_count = #chars
             local current_x = box_x + s.padding_x
             for j = 1, char_count do
@@ -6242,7 +6336,6 @@ local scope_state = {
 }
 local scope_overlay_ref = {ui.reference('Visuals', 'Effects', 'Remove scope overlay')}
 local SEGMENT_SPACING = -2
-local clamp = utils.clamp  
 local function is_scoped()
     local me = entity.get_local_player()
     if not me or not entity.is_alive(me) then return false end
@@ -6300,9 +6393,9 @@ client.set_event_callback('paint', function()
     local width, height = client.screen_size()
     local center_x, center_y = width / 2, height / 2
     if is_scoped() then
-        scope_state.alpha = clamp(scope_state.alpha + fade_rate, 0, 1)
+        scope_state.alpha = utils.clamp(scope_state.alpha + fade_rate, 0, 1)
     else
-        scope_state.alpha = clamp(scope_state.alpha - fade_rate, 0, 1)
+        scope_state.alpha = utils.clamp(scope_state.alpha - fade_rate, 0, 1)
     end
     if scope_state.alpha > 0 then
         local line_length = initial_position - offset
@@ -6373,8 +6466,6 @@ grenade_radius.fade_ticks = 15
 grenade_radius.molotov_fade_ticks = 64
 grenade_radius.pi2 = math.pi * 2
 grenade_radius.angle = 0
-grenade_radius.clamp = utils.clamp  
-grenade_radius.contains = utils.table_contains  
 function grenade_radius.distance(a, b)
     return utils.distance_3d(a.x, a.y, a.z, b.x, b.y, b.z) 
 end
@@ -6390,7 +6481,7 @@ function grenade_radius.draw_smoke(radius, arc_len, start_angle, col, ent)
     local ticks = globals.tickcount() - tick_begin
     local time_elapsed = globals.tickinterval() * ticks
     local scale = (ticks < grenade_radius.fade_ticks and ticks or grenade_radius.fade_ticks) / grenade_radius.fade_ticks
-    local fade = grenade_radius.clamp(1 - time_elapsed / grenade_radius.smoke_duration, 0, 1)
+    local fade = utils.clamp(1 - time_elapsed / grenade_radius.smoke_duration, 0, 1)
     local r = radius
     if scale ~= 1 then r = r * scale end
     for i = start_angle, end_angle, step do
@@ -6422,17 +6513,17 @@ function grenade_radius.draw_smoke(radius, arc_len, start_angle, col, ent)
         end
     end
     local display = get_menu_value(menu.visual.grenade_radius_display)
-    local show_bar = grenade_radius.contains(display, "Bar")
-    local show_text = grenade_radius.contains(display, "Text")
+    local show_bar = utils.table_contains(display, "Bar")
+    local show_text = utils.table_contains(display, "Text")
     if cx and grenade_radius.smoke_duration - time_elapsed > 0 then
         local alpha_mult = 1
         if fade < 0.2 then alpha_mult = fade + fade * 4 end
         if show_bar then
             local bar_w = 26
             local bar_x = cx - bar_w / 2 + 2
-            local progress = grenade_radius.clamp(1 - time_elapsed / grenade_radius.smoke_duration, 0, 1)
+            local progress = utils.clamp(1 - time_elapsed / grenade_radius.smoke_duration, 0, 1)
             renderer.rectangle(bar_x, cy + 17, bar_w, 4, 0, 0, 0, 150 * alpha_mult)
-            renderer.rectangle(bar_x + 1, cy + 18, grenade_radius.clamp(bar_w * progress - 2, 0, bar_w), 2, col[1], col[2], col[3], 255)
+            renderer.rectangle(bar_x + 1, cy + 18, utils.clamp(bar_w * progress - 2, 0, bar_w), 2, col[1], col[2], col[3], 255)
         end
         if show_text then
             renderer.text(cx, cy + (show_bar and 25 or 20), 255, 255, 255, 200 * alpha_mult, "c-", 0, string.format("%.1f", grenade_radius.smoke_duration - time_elapsed))
@@ -6446,7 +6537,7 @@ function grenade_radius.draw_molotov(center, radius, arc_len, start_angle, col, 
     local ticks = globals.tickcount() - tick_begin
     local time_elapsed = globals.tickinterval() * ticks
     local scale = (ticks < grenade_radius.molotov_fade_ticks and ticks or grenade_radius.molotov_fade_ticks) / grenade_radius.molotov_fade_ticks
-    local fade = grenade_radius.clamp(1 - time_elapsed / grenade_radius.molotov_duration, 0, 1)
+    local fade = utils.clamp(1 - time_elapsed / grenade_radius.molotov_duration, 0, 1)
     for i = start_angle, end_angle, step do
         local next_i = i + step > end_angle and end_angle or i + step
         local p1 = vector(center.x + radius * math.cos(i), center.y + radius * math.sin(i))
@@ -6478,17 +6569,17 @@ function grenade_radius.draw_molotov(center, radius, arc_len, start_angle, col, 
     local origin_vec = vector(origin[1], origin[2], origin[3])
     cx, cy = renderer.world_to_screen(origin_vec.x, origin_vec.y, origin_vec.z)
     local display = get_menu_value(menu.visual.grenade_radius_display)
-    local show_bar = grenade_radius.contains(display, "Bar")
-    local show_text = grenade_radius.contains(display, "Text")
+    local show_bar = utils.table_contains(display, "Bar")
+    local show_text = utils.table_contains(display, "Text")
     if cx and grenade_radius.molotov_duration - time_elapsed > 0 then
         local alpha_mult = 1
         if fade < 0.2 then alpha_mult = fade + fade * 4 end
         if show_bar then
             local bar_w = 26
             local bar_x = cx - bar_w / 2 + 2
-            local progress = grenade_radius.clamp(1 - time_elapsed / grenade_radius.molotov_duration, 0, 1)
+            local progress = utils.clamp(1 - time_elapsed / grenade_radius.molotov_duration, 0, 1)
             renderer.rectangle(bar_x, cy + 17, bar_w, 4, 0, 0, 0, 150 * alpha_mult)
-            renderer.rectangle(bar_x + 1, cy + 18, grenade_radius.clamp(bar_w * progress - 2, 0, bar_w), 2, col[1], col[2], col[3], 255)
+            renderer.rectangle(bar_x + 1, cy + 18, utils.clamp(bar_w * progress - 2, 0, bar_w), 2, col[1], col[2], col[3], 255)
         end
         if show_text then
             renderer.text(cx, cy + (show_bar and 25 or 20), 255, 255, 255, 200 * alpha_mult, "c-", 0, string.format("%.1f", grenade_radius.molotov_duration - time_elapsed))

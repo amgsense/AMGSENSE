@@ -1,3 +1,4 @@
+
 local libs = {
     base64 = require("gamesense/base64"),
     clipboard = require("gamesense/clipboard"),
@@ -9,6 +10,7 @@ local libs = {
     vector = require("vector"),
     ffi = require("ffi")
 }
+
 local base64, clipboard, json = libs.base64, libs.clipboard, libs.json
 local csgo_weapons, trace, entity_lib = libs.csgo_weapons, libs.trace, libs.entity_lib
 local pui, vector, ffi = libs.pui, libs.vector, libs.ffi
@@ -293,6 +295,7 @@ local slowmotion_limit_ref = ui.new_slider("AA", "Other", "Slow motion limit", 1
 local air_stop = {}
 air_stop.last_speed = 0
 air_stop.stop_frames = 0
+
 function air_stop.is_weapon_enabled(me)
     local weapon = entity.get_prop(me, "m_hActiveWeapon")
     if not weapon then return false end
@@ -3449,87 +3452,267 @@ local function calc_body_yaw(vals, yaw_offset)
                     lorenz_sigma = 10,
                     rossler_a = 0.2,
                     adaptive_rate = 0.01
+                },
+                hyper_chaos = {
+                    x = 0.1, y = 0.1, z = 0.1, w = 0.1,
+                    mode = 1, switch_cd = 0
+                },
+                chen_attractor = {
+                    x = 0.1, y = 0.1, z = 0.1,
+                    a = 35, b = 3, c = 28
+                },
+                sprott_attractor = {
+                    x = 0.1, y = 0.1, z = 0.1
+                },
+                aizawa_attractor = {
+                    x = 0.1, y = 0.1, z = 0.1,
+                    a = 0.95, b = 0.7, c = 0.6, d = 3.5, e = 0.25, f = 0.1
+                },
+                thomas_attractor = {
+                    x = 0.1, y = 0.1, z = 0.1,
+                    b = 0.208186
+                },
+                dual_attractor = {
+                    x1 = 0.1, y1 = 0.1, z1 = 0.1,
+                    x2 = -0.1, y2 = -0.1, z2 = -0.1,
+                    coupling = 0.35
+                },
+                quantum_entangle = {
+                    pairs = {},
+                    decoherence = 0,
+                    entangle_strength = 0.95,
+                    superposition_states = {}
+                },
+                lstm_predictor = {
+                    hidden = 0, cell = 0, sequence = {},
+                    wf = 0.8, wi = 0.8, wo = 0.8, wc = 0.8,
+                    anti_predict_strength = 1.5
+                },
+                adversarial_net = {
+                    weights = {}, momentum = {}, bias = 0,
+                    lr = 0.1, prediction_error = 0,
+                    layer_outputs = {}
+                },
+                tent_map = {x = 0.5, mu = 1.99},
+                brownian = {x = 0, v = 0, drift = 0},
+                multi_fusion = {
+                    scales = {0.5, 1.0, 2.0, 4.0, 8.0},
+                    scale_weights = {0.1, 0.25, 0.30, 0.25, 0.1},
+                    adaptive_weights = {0.2, 0.2, 0.2, 0.2, 0.2}
+                },
+                fft_counter = {
+                    samples = {}, freq_bins = {}, dominant_freq = 0
+                },
+                resolver_bait = {
+                    active = false, bait_pattern = {}, bait_duration = 0,
+                    real_pattern_hidden = true, bait_cd = 0
+                },
+                meta_ensemble = {
+                    layer_scores = {}, layer_outputs = {},
+                    meta_weights = {0.15, 0.15, 0.15, 0.15, 0.1, 0.1, 0.1, 0.1}
+                },
+                xorshift = {state = 0x12345678},
+                pcg = {state = 0x853c49e6748fea9b, inc = 0xda3e39cb94b95bdb},
+          
+                chaos_mixer = {
+                    ring_buffer = {},
+                    write_idx = 1,
+                    read_offsets = {3, 7, 11, 13, 17},
+                    feedback = 0
+                },
+                time_warp = {
+                    base_time = 0,
+                    warp_factor = 1.0,
+                    phase_shifts = {0, 0, 0, 0},
+                    last_warp = 0
+                },
+                entropy_pool = {
+                    pool = {},
+                    pool_idx = 1,
+                    mix_state = 0
+                },
+                spike_generator = {
+                    cooldown = 0,
+                    last_spike = 0,
+                    spike_magnitude = 0,
+                    spike_decay = 0
+                },
+                chaos_switch = {
+                    active_systems = {1, 2, 3},
+                    switch_timer = 0,
+                    weight_mutations = {}
+                },
+                prime_chaos = {
+                    primes = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37},
+                    idx = 1,
+                    accumulator = 0
+                },
+                bit_chaos = {
+                    state32 = 0xDEADBEEF,
+                    rotate_amount = 7
+                },
+                golden_ratio = {
+                    phi = 1.618033988749895,
+                    accumulator = 0,
+                    phase = 0
+                },
+                sinusoidal_chaos = {
+                    freqs = {1.1, 2.3, 3.7, 5.3, 7.1},
+                    phases = {0, 0, 0, 0, 0},
+                    amps = {1, 0.8, 0.6, 0.4, 0.2}
+                },
+                derivative_chaos = {
+                    last_values = {0, 0, 0, 0},
+                    velocity = 0,
+                    acceleration = 0,
+                    jerk = 0
+                },
+                -- V3 Enhanced Unpredictability Systems
+                halvorsen_attractor = {
+                    x = 0.1, y = 0.1, z = 0.1,
+                    a = 1.89
+                },
+                dadras_attractor = {
+                    x = 0.1, y = 0.1, z = 0.1,
+                    a = 3, b = 2.7, c = 1.7, d = 2, e = 9
+                },
+                rabinovich_attractor = {
+                    x = 0.1, y = 0.1, z = 0.1,
+                    alpha = 0.87, gamma = 0.1
+                },
+                cellular_automaton = {
+                    state = 0xCAFEBABE,
+                    rule = 110,
+                    history = {},
+                    generation = 0
+                },
+                perlin_noise = {
+                    permutation = {},
+                    octaves = 4,
+                    persistence = 0.5,
+                    time_offset = 0
+                },
+                temporal_breaker = {
+                    time_slots = {},
+                    slot_idx = 1,
+                    reversal_chance = 0,
+                    last_reversal = 0,
+                    momentum_history = {}
+                },
+                adaptive_mutation = {
+                    mutation_rate = 0.15,
+                    mutation_strength = 1.0,
+                    gene_pool = {},
+                    fitness_history = {},
+                    generation = 0
+                },
+                spectral_analyzer = {
+                    frequency_bins = {},
+                    dominant_frequencies = {},
+                    phase_shifts = {},
+                    anti_harmonic = 0
+                },
+                chaos_resonance = {
+                    resonators = {0, 0, 0, 0, 0},
+                    coupling_matrix = {},
+                    energy = 1.0,
+                    decay = 0.98
+                },
+                stochastic_jump = {
+                    jump_probability = 0.08,
+                    jump_magnitude = 0,
+                    cooldown = 0,
+                    last_jump_tick = 0
+                },
+                wavelet_chaos = {
+                    scales = {1, 2, 4, 8, 16},
+                    coefficients = {},
+                    mother_wavelet = "morlet"
+                },
+                bifurcation_control = {
+                    r_param = 3.7,
+                    r_direction = 1,
+                    bifurcation_points = {3.0, 3.449, 3.544, 3.5644, 3.5688},
+                    current_regime = 1
+                },
+                anti_ml_defense = {
+                    fake_patterns = {},
+                    pattern_switch_cd = 0,
+                    deception_mode = 0,
+                    noise_injection = 0
+                },
+                hyperchaos_4d = {
+                    x = 0.1, y = 0.1, z = 0.1, w = 0.1,
+                    a = 10, b = 28, c = 8/3, d = 0.1
                 }
             }
         end
         local v2 = state.by_v2
         
         if globals.chokedcommands() == 0 and state.jitter_cycle >= state.jitter_current_delay then
-            local chaos_offset = 0
-            if delay_variance > 0 then
-                chaos_offset = enhanced_random(-delay_variance, delay_variance, "body_left")
-            end
-            state.jitter_current_delay = math.max(MIN_DELAY, math.min(MAX_DELAY, base_delay + chaos_offset))
+            state.jitter_current_delay = math.max(MIN_DELAY, math.min(MAX_DELAY, base_delay + (delay_variance > 0 and enhanced_random(-delay_variance, delay_variance, "body_left") or 0)))
             
             if jitter_variance > 0 then
-                local dt = 0.012
-                local sigma = v2.chaos_params.lorenz_sigma
-                local dx = sigma * (v2.lorenz.y - v2.lorenz.x) * dt
-                local dy = (v2.lorenz.x * (28 - v2.lorenz.z) - v2.lorenz.y) * dt
-                local dz = (v2.lorenz.x * v2.lorenz.y - 2.667 * v2.lorenz.z) * dt
-                v2.lorenz.x = math.max(-40, math.min(40, v2.lorenz.x + dx))
-                v2.lorenz.y = math.max(-40, math.min(40, v2.lorenz.y + dy))
-                v2.lorenz.z = math.max(0, math.min(50, v2.lorenz.z + dz))
+                -- Lorenz attractor (inlined)
+                v2.lorenz.x = math.max(-40, math.min(40, v2.lorenz.x + v2.chaos_params.lorenz_sigma * (v2.lorenz.y - v2.lorenz.x) * 0.012))
+                v2.lorenz.y = math.max(-40, math.min(40, v2.lorenz.y + (v2.lorenz.x * (28 - v2.lorenz.z) - v2.lorenz.y) * 0.012))
+                v2.lorenz.z = math.max(0, math.min(50, v2.lorenz.z + (v2.lorenz.x * v2.lorenz.y - 2.667 * v2.lorenz.z) * 0.012))
                 
-                local dt_r = 0.04
-                local a_r = v2.chaos_params.rossler_a
-                v2.rossler.x = math.max(-25, math.min(25, v2.rossler.x + (-v2.rossler.y - v2.rossler.z) * dt_r))
-                v2.rossler.y = math.max(-25, math.min(25, v2.rossler.y + (v2.rossler.x + a_r * v2.rossler.y) * dt_r))
-                v2.rossler.z = math.max(0, math.min(35, v2.rossler.z + (0.2 + v2.rossler.z * (v2.rossler.x - 5.7)) * dt_r))
+                -- Rossler attractor (inlined)
+                v2.rossler.x = math.max(-25, math.min(25, v2.rossler.x + (-v2.rossler.y - v2.rossler.z) * 0.04))
+                v2.rossler.y = math.max(-25, math.min(25, v2.rossler.y + (v2.rossler.x + v2.chaos_params.rossler_a * v2.rossler.y) * 0.04))
+                v2.rossler.z = math.max(0, math.min(35, v2.rossler.z + (0.2 + v2.rossler.z * (v2.rossler.x - 5.7)) * 0.04))
                 
-                local dt_d = 0.015
-                local alpha, beta, delta, gamma = 1, -1, 0.3, 0.4
-                local dv = v2.duffing.v + (gamma * math.cos(globals.curtime() * 1.2) - delta * v2.duffing.v - alpha * v2.duffing.x - beta * v2.duffing.x * v2.duffing.x * v2.duffing.x) * dt_d
-                v2.duffing.v = math.max(-3, math.min(3, dv))
-                v2.duffing.x = math.max(-2, math.min(2, v2.duffing.x + v2.duffing.v * dt_d))
+                -- Duffing oscillator (inlined)
+                v2.duffing.v = math.max(-3, math.min(3, v2.duffing.v + (0.4 * math.cos(globals.curtime() * 1.2) - 0.3 * v2.duffing.v - v2.duffing.x + v2.duffing.x * v2.duffing.x * v2.duffing.x) * 0.015))
+                v2.duffing.x = math.max(-2, math.min(2, v2.duffing.x + v2.duffing.v * 0.015))
                 
-                local dt_c = 0.01
-                local a_c, b_c, c_c = 15.6, 28, -1.143
-                local h_x = v2.chua.x < 0 and (b_c * v2.chua.x) or (c_c * v2.chua.x)
-                v2.chua.x = math.max(-3, math.min(3, v2.chua.x + a_c * (v2.chua.y - v2.chua.x - h_x) * dt_c))
-                v2.chua.y = math.max(-3, math.min(3, v2.chua.y + (v2.chua.x - v2.chua.y + v2.chua.z) * dt_c))
-                v2.chua.z = math.max(-3, math.min(3, v2.chua.z + (-14.87 * v2.chua.y) * dt_c))
+                -- Chua circuit (inlined)
+                v2.chua.x = math.max(-3, math.min(3, v2.chua.x + 15.6 * (v2.chua.y - v2.chua.x - (v2.chua.x < 0 and 28 * v2.chua.x or -1.143 * v2.chua.x)) * 0.01))
+                v2.chua.y = math.max(-3, math.min(3, v2.chua.y + (v2.chua.x - v2.chua.y + v2.chua.z) * 0.01))
+                v2.chua.z = math.max(-3, math.min(3, v2.chua.z + (-14.87 * v2.chua.y) * 0.01))
                 
-                local hx_new = 1 - 1.4 * v2.henon.x * v2.henon.x + v2.henon.y
+                -- Henon map (inlined)
                 v2.henon.y = 0.3 * v2.henon.x
-                v2.henon.x = math.max(-1.5, math.min(1.5, hx_new))
+                v2.henon.x = math.max(-1.5, math.min(1.5, 1 - 1.4 * v2.henon.x * v2.henon.x + v2.henon.y))
                 
                 v2.logistic.x = math.max(0.001, math.min(0.999, v2.logistic.r * v2.logistic.x * (1 - v2.logistic.x)))
                 
-                local cc = v2.cross_coupling
-                cc.lorenz_rossler = v2.lorenz.x * 0.1 + v2.rossler.x * 0.1
-                cc.henon_logistic = v2.henon.x * 0.15 + (v2.logistic.x - 0.5) * 0.2
-                v2.lorenz.y = v2.lorenz.y + cc.lorenz_rossler * cc.coupling_strength
-                v2.henon.y = v2.henon.y + cc.henon_logistic * cc.coupling_strength * 0.8
+                -- Cross coupling
+                v2.cross_coupling.lorenz_rossler = v2.lorenz.x * 0.1 + v2.rossler.x * 0.1
+                v2.cross_coupling.henon_logistic = v2.henon.x * 0.15 + (v2.logistic.x - 0.5) * 0.2
+                v2.lorenz.y = v2.lorenz.y + v2.cross_coupling.lorenz_rossler * v2.cross_coupling.coupling_strength
+                v2.henon.y = v2.henon.y + v2.cross_coupling.henon_logistic * v2.cross_coupling.coupling_strength * 0.8
                 
                 v2.phase_osc.p1 = (v2.phase_osc.p1 + enhanced_random(10, 25, "body_left")) % 360
                 v2.phase_osc.p2 = (v2.phase_osc.p2 + enhanced_random(15, 35, "body_right")) % 360
                 v2.phase_osc.p3 = (v2.phase_osc.p3 + enhanced_random(5, 15, "timing")) % 360
                 
+                -- LFSR (inlined)
                 v2.lfsr_state = bit.bxor(v2.lfsr_state, bit.lshift(v2.lfsr_state, 13))
                 v2.lfsr_state = bit.bxor(v2.lfsr_state, bit.rshift(v2.lfsr_state, 17))
                 v2.lfsr_state = bit.bxor(v2.lfsr_state, bit.lshift(v2.lfsr_state, 5))
-                local lfsr_bit = bit.band(v2.lfsr_state, 1)
-                v2.lfsr_state = bit.rshift(v2.lfsr_state, 1)
-                if lfsr_bit == 1 then 
-                    v2.lfsr_state = bit.bxor(v2.lfsr_state, v2.lfsr_poly) 
-                end
-                local lfsr_val = ((v2.lfsr_state % 2000) - 1000) / 1000
+                if bit.band(v2.lfsr_state, 1) == 1 then v2.lfsr_state = bit.bxor(bit.rshift(v2.lfsr_state, 1), v2.lfsr_poly)
+                else v2.lfsr_state = bit.rshift(v2.lfsr_state, 1) end
                 
-                local C1 = (v2.lorenz.x + v2.lorenz.y) * 0.018
-                local C2 = v2.rossler.x * 0.035
-                local C3 = v2.duffing.x * 0.4
-                local C4 = (v2.chua.x + v2.chua.y) * 0.3
-                local C5 = math.sin(math.rad(v2.phase_osc.p1)) * 0.25
-                local C6 = math.cos(math.rad(v2.phase_osc.p2)) * 0.2
-                local C7 = math.sin(math.rad(v2.phase_osc.p3)) * math.cos(math.rad(v2.phase_osc.p1)) * 0.15
-                local C8 = lfsr_val * 0.3
+                -- Store chaos values in table to reduce locals
+                v2.C = {}
+                v2.C[1] = (v2.lorenz.x + v2.lorenz.y) * 0.018
+                v2.C[2] = v2.rossler.x * 0.035
+                v2.C[3] = v2.duffing.x * 0.4
+                v2.C[4] = (v2.chua.x + v2.chua.y) * 0.3
+                v2.C[5] = math.sin(math.rad(v2.phase_osc.p1)) * 0.25
+                v2.C[6] = math.cos(math.rad(v2.phase_osc.p2)) * 0.2
+                v2.C[7] = math.sin(math.rad(v2.phase_osc.p3)) * math.cos(math.rad(v2.phase_osc.p1)) * 0.15
+                v2.C[8] = ((v2.lfsr_state % 2000) - 1000) / 1000 * 0.3
+                local C1, C2, C3, C4, C5, C6, C7, C8 = v2.C[1], v2.C[2], v2.C[3], v2.C[4], v2.C[5], v2.C[6], v2.C[7], v2.C[8]
+                local cc = v2.cross_coupling
                 
-                local markov_rand = enhanced_random(1, 100, "timing") / 100
-                local cumsum = 0
+                v2.markov.rand = enhanced_random(1, 100, "timing") / 100
+                v2.markov.cumsum = 0
                 for i = 1, 4 do
-                    cumsum = cumsum + v2.markov.transition[v2.markov.state][i]
-                    if markov_rand <= cumsum then
+                    v2.markov.cumsum = v2.markov.cumsum + v2.markov.transition[v2.markov.state][i]
+                    if v2.markov.rand <= v2.markov.cumsum then
                         v2.markov.state = i
                         break
                     end
@@ -3540,26 +3723,23 @@ local function calc_body_yaw(vals, yaw_offset)
                     v2.frequency_hopping.hop_counter = 0
                     v2.frequency_hopping.current_freq = (inject_true_entropy() % #v2.frequency_hopping.freq_table) + 1
                 end
-                local freq_phase = (globals.curtime() * v2.frequency_hopping.freq_table[v2.frequency_hopping.current_freq] * 15) % 360
+                v2.freq_phase = (globals.curtime() * v2.frequency_hopping.freq_table[v2.frequency_hopping.current_freq] * 15) % 360
                 
-                local me = entity.get_local_player()
-                local threat = client.current_threat()
-                if me and threat and not entity.is_dormant(threat) then
-                    local enemy_pitch, enemy_yaw = entity.get_prop(threat, "m_angEyeAngles")
-                    if enemy_pitch and enemy_yaw then
-                        table.insert(v2.enemy_tracking.last_angles, {yaw = enemy_yaw, tick = globals.tickcount()})
-                        if #v2.enemy_tracking.last_angles > 6 then
-                            table.remove(v2.enemy_tracking.last_angles, 1)
-                        end
-                        
+                -- Enemy tracking (use v2 storage)
+                v2.temp_me = entity.get_local_player()
+                v2.temp_threat = client.current_threat()
+                if v2.temp_me and v2.temp_threat and not entity.is_dormant(v2.temp_threat) then
+                    v2.temp_pitch, v2.temp_yaw = entity.get_prop(v2.temp_threat, "m_angEyeAngles")
+                    if v2.temp_pitch and v2.temp_yaw then
+                        table.insert(v2.enemy_tracking.last_angles, {yaw = v2.temp_yaw, tick = globals.tickcount()})
+                        if #v2.enemy_tracking.last_angles > 6 then table.remove(v2.enemy_tracking.last_angles, 1) end
                         if #v2.enemy_tracking.last_angles >= 4 then
-                            local aim_variance = 0
+                            v2.enemy_tracking.aim_variance = 0
                             for i = 2, #v2.enemy_tracking.last_angles do
-                                aim_variance = aim_variance + math.abs(v2.enemy_tracking.last_angles[i].yaw - v2.enemy_tracking.last_angles[i-1].yaw)
+                                v2.enemy_tracking.aim_variance = v2.enemy_tracking.aim_variance + math.abs(v2.enemy_tracking.last_angles[i].yaw - v2.enemy_tracking.last_angles[i-1].yaw)
                             end
-                            aim_variance = aim_variance / (#v2.enemy_tracking.last_angles - 1)
-                            
-                            v2.enemy_tracking.aim_detected = aim_variance < 5
+                            v2.enemy_tracking.aim_variance = v2.enemy_tracking.aim_variance / (#v2.enemy_tracking.last_angles - 1)
+                            v2.enemy_tracking.aim_detected = v2.enemy_tracking.aim_variance < 5
                             if v2.enemy_tracking.aim_detected then
                                 v2.adaptive.threat_multiplier = math.min(1.5, v2.adaptive.threat_multiplier + 0.1)
                                 v2.enemy_tracking.counter_mode = (v2.enemy_tracking.counter_mode + 1) % 3
@@ -3570,23 +3750,412 @@ local function calc_body_yaw(vals, yaw_offset)
                     end
                 end
                 
-                local C9 = v2.henon.x * 0.35
-                local C10 = (v2.logistic.x - 0.5) * 0.5
-                local C11 = math.sin(math.rad(freq_phase)) * 0.28
+                -- Store more chaos values in table
+                v2.C[9] = v2.henon.x * 0.35
+                v2.C[10] = (v2.logistic.x - 0.5) * 0.5
+                v2.C[11] = math.sin(math.rad(v2.freq_phase)) * 0.28
+                local C9, C10, C11 = v2.C[9], v2.C[10], v2.C[11]
                 
-                local frac = v2.fractal
-                frac.octaves[1] = math.sin(globals.curtime() * 2.1) * 0.5
-                frac.octaves[2] = math.sin(globals.curtime() * 4.2 * frac.lacunarity) * 0.25
-                frac.octaves[3] = math.sin(globals.curtime() * 8.4 * frac.lacunarity * frac.lacunarity) * 0.125
-                frac.octaves[4] = math.sin(globals.curtime() * 16.8 * frac.lacunarity * frac.lacunarity * frac.lacunarity) * 0.0625
-                local fractal_noise = 0
-                for i = 1, 4 do
-                    fractal_noise = fractal_noise + frac.octaves[i] * (frac.persistence ^ (i-1))
+                -- Fractal noise (use v2 storage)
+                v2.fractal.octaves[1] = math.sin(globals.curtime() * 2.1) * 0.5
+                v2.fractal.octaves[2] = math.sin(globals.curtime() * 4.2 * v2.fractal.lacunarity) * 0.25
+                v2.fractal.octaves[3] = math.sin(globals.curtime() * 8.4 * v2.fractal.lacunarity * v2.fractal.lacunarity) * 0.125
+                v2.fractal.octaves[4] = math.sin(globals.curtime() * 16.8 * v2.fractal.lacunarity * v2.fractal.lacunarity * v2.fractal.lacunarity) * 0.0625
+                v2.fractal.noise = 0
+                for i = 1, 4 do v2.fractal.noise = v2.fractal.noise + v2.fractal.octaves[i] * (v2.fractal.persistence ^ (i-1)) end
+                v2.C[13] = v2.fractal.noise * 0.4
+                v2.C[14] = cc.lorenz_rossler * 0.3
+                v2.C[15] = cc.henon_logistic * 0.35
+                local C13, C14, C15 = v2.C[13], v2.C[14], v2.C[15]
+                
+                -- Hyper chaos
+                v2.hyper_chaos.x = math.max(-50, math.min(50, v2.hyper_chaos.x + (36 * (v2.hyper_chaos.y - v2.hyper_chaos.x) + v2.hyper_chaos.w) * 0.01))
+                v2.hyper_chaos.y = math.max(-50, math.min(50, v2.hyper_chaos.y + (20 * v2.hyper_chaos.y - v2.hyper_chaos.x * v2.hyper_chaos.z) * 0.01))
+                v2.hyper_chaos.z = math.max(0, math.min(70, v2.hyper_chaos.z + (v2.hyper_chaos.x * v2.hyper_chaos.y - 3 * v2.hyper_chaos.z) * 0.01))
+                v2.hyper_chaos.w = math.max(-40, math.min(40, v2.hyper_chaos.w + (-15.15 * v2.hyper_chaos.x + v2.hyper_chaos.y * v2.hyper_chaos.z) * 0.01))
+                v2.hyper_chaos.switch_cd = v2.hyper_chaos.switch_cd - 1
+                if v2.hyper_chaos.switch_cd <= 0 then
+                    v2.hyper_chaos.mode = (inject_true_entropy() % 4) + 1
+                    v2.hyper_chaos.switch_cd = enhanced_random(8, 24, "timing")
                 end
-                local C13 = fractal_noise * 0.4
+                local C_HYPER = ({(v2.hyper_chaos.x + v2.hyper_chaos.y) * 0.02, (v2.hyper_chaos.z - v2.hyper_chaos.w) * 0.018, math.sin(v2.hyper_chaos.x * 0.12) * v2.hyper_chaos.w * 0.025, (v2.hyper_chaos.x * v2.hyper_chaos.y - v2.hyper_chaos.z) * 0.012})[v2.hyper_chaos.mode] or 0
                 
-                local C14 = cc.lorenz_rossler * 0.3
-                local C15 = cc.henon_logistic * 0.35
+                local chen = v2.chen_attractor
+                chen.x = math.max(-30, math.min(30, chen.x + chen.a * (chen.y - chen.x) * 0.008))
+                chen.y = math.max(-30, math.min(30, chen.y + ((chen.c - chen.a) * chen.x - chen.x * chen.z + chen.c * chen.y) * 0.008))
+                chen.z = math.max(0, math.min(50, chen.z + (chen.x * chen.y - chen.b * chen.z) * 0.008))
+                local C_CHEN = (chen.x + chen.y) * 0.025
+
+                local sprott = v2.sprott_attractor
+                sprott.x = math.max(-3, math.min(3, sprott.x + (sprott.y + 2.07 * sprott.x * sprott.y + sprott.x * sprott.z) * 0.02))
+                sprott.y = math.max(-3, math.min(3, sprott.y + (1 - 1.79 * sprott.x * sprott.x + sprott.y * sprott.z) * 0.02))
+                sprott.z = math.max(-3, math.min(3, sprott.z + (sprott.x - sprott.x * sprott.x - sprott.y * sprott.y) * 0.02))
+                local C_SPROTT = sprott.x * 0.4 + sprott.y * 0.35
+                
+                local aiz = v2.aizawa_attractor
+                aiz.x = math.max(-2, math.min(2, aiz.x + ((aiz.z - aiz.b) * aiz.x - aiz.d * aiz.y) * 0.01))
+                aiz.y = math.max(-2, math.min(2, aiz.y + (aiz.d * aiz.x + (aiz.z - aiz.b) * aiz.y) * 0.01))
+                aiz.z = math.max(-2, math.min(2, aiz.z + (aiz.c + aiz.a * aiz.z - (aiz.z * aiz.z * aiz.z) / 3 - (aiz.x * aiz.x + aiz.y * aiz.y) * (1 + aiz.e * aiz.z) + aiz.f * aiz.z * aiz.x * aiz.x * aiz.x) * 0.01))
+                local C_AIZAWA = (aiz.x + aiz.y) * 0.5
+                
+                local thomas = v2.thomas_attractor
+                thomas.x = math.max(-5, math.min(5, thomas.x + (math.sin(thomas.y) - thomas.b * thomas.x) * 0.05))
+                thomas.y = math.max(-5, math.min(5, thomas.y + (math.sin(thomas.z) - thomas.b * thomas.y) * 0.05))
+                thomas.z = math.max(-5, math.min(5, thomas.z + (math.sin(thomas.x) - thomas.b * thomas.z) * 0.05))
+                local C_THOMAS = thomas.x * 0.25 + thomas.y * 0.2
+                
+                local da = v2.dual_attractor
+                da.x1 = math.max(-50, math.min(50, da.x1 + (10 * (da.y1 - da.x1) * 0.012 + da.coupling * (da.x2 - da.x1))))
+                da.y1 = math.max(-50, math.min(50, da.y1 + (da.x1 * (28 - da.z1) - da.y1) * 0.012))
+                da.z1 = math.max(0, math.min(50, da.z1 + (da.x1 * da.y1 - 2.667 * da.z1) * 0.012))
+                da.x2 = math.max(-50, math.min(50, da.x2 + (10 * (da.y2 - da.x2) * 0.012 + da.coupling * (da.x1 - da.x2))))
+                da.y2 = math.max(-50, math.min(50, da.y2 + (da.x2 * (28 - da.z2) - da.y2) * 0.012))
+                da.z2 = math.max(0, math.min(50, da.z2 + (da.x2 * da.y2 - 2.667 * da.z2) * 0.012))
+                local C_DUAL = ((da.x1 - da.x2) + (da.y1 - da.y2)) * 0.03
+                
+             
+                local qe = v2.quantum_entangle
+                if #qe.pairs < 5 then
+                    for qi = 1, 5 do
+                        qe.pairs[qi] = {
+                            a = enhanced_random(-100, 100, "body_left") / 100,
+                            b = enhanced_random(-100, 100, "body_right") / 100,
+                            phase = enhanced_random(0, 360, "timing")
+                        }
+                    end
+                end
+                qe.decoherence = qe.decoherence + 0.025
+                if qe.decoherence > 1 or inject_true_entropy() % 100 < 8 then
+                    qe.decoherence = 0
+                    local reset_idx = (inject_true_entropy() % 5) + 1
+                    qe.pairs[reset_idx].a = enhanced_random(-100, 100, "body_left") / 100
+                    qe.pairs[reset_idx].b = -qe.pairs[reset_idx].a * qe.entangle_strength
+                    qe.pairs[reset_idx].phase = enhanced_random(0, 360, "timing")
+                end
+                local C_QUANTUM_ENT = 0
+                for qi = 1, 5 do
+                    local pair = qe.pairs[qi]
+                    pair.phase = (pair.phase + 8.7) % 360
+                    local entangle_val = (pair.a * math.cos(math.rad(pair.phase)) + pair.b * math.sin(math.rad(pair.phase)))
+                    entangle_val = entangle_val * (1 - qe.decoherence * 0.35)
+                    C_QUANTUM_ENT = C_QUANTUM_ENT + entangle_val * 0.2
+                end
+                
+               
+                local lstm = v2.lstm_predictor
+                table.insert(lstm.sequence, C1 + C3 + C5)
+                if #lstm.sequence > 20 then table.remove(lstm.sequence, 1) end
+                local C_LSTM = 0
+                if #lstm.sequence >= 6 then
+                    local input_val = lstm.sequence[#lstm.sequence]
+                    local forget_gate = 1 / (1 + math.exp(-(lstm.wf * input_val + lstm.hidden * 0.5)))
+                    local input_gate = 1 / (1 + math.exp(-(lstm.wi * input_val + lstm.hidden * 0.5)))
+                    local output_gate = 1 / (1 + math.exp(-(lstm.wo * input_val + lstm.hidden * 0.5)))
+                    local cell_candidate = math.tanh(lstm.wc * input_val + lstm.hidden * 0.3)
+                    lstm.cell = forget_gate * lstm.cell + input_gate * cell_candidate
+                    lstm.hidden = output_gate * math.tanh(lstm.cell)
+                    local predicted_next = lstm.hidden
+                    C_LSTM = -predicted_next * lstm.anti_predict_strength
+                    if #lstm.sequence >= 10 then
+                        local pred_error = lstm.sequence[#lstm.sequence] - lstm.sequence[#lstm.sequence - 5]
+                        lstm.wf = math.max(0.3, math.min(1.3, lstm.wf + pred_error * 0.015))
+                        lstm.wi = math.max(0.3, math.min(1.3, lstm.wi - pred_error * 0.012))
+                    end
+                end
+                
+              
+                local adv = v2.adversarial_net
+                if #adv.weights < 8 then
+                    for ai = 1, 8 do
+                        adv.weights[ai] = enhanced_random(-80, 80, "body_left") / 100
+                        adv.momentum[ai] = 0
+                    end
+                end
+                local adv_inputs = {C1, C2, C3, C_HYPER, C_CHEN, C_SPROTT, C_AIZAWA, C_THOMAS}
+                local adv_output = adv.bias
+                for ai = 1, 8 do
+                    adv_output = adv_output + adv.weights[ai] * adv_inputs[ai]
+                end
+                adv_output = math.tanh(adv_output)
+                local adv_target = enhanced_random(-100, 100, "body_left") / 100
+                adv.prediction_error = adv_target - adv_output
+                for ai = 1, 8 do
+                    adv.momentum[ai] = adv.momentum[ai] * 0.9 + adv.lr * adv.prediction_error * adv_inputs[ai]
+                    adv.weights[ai] = math.max(-1.5, math.min(1.5, adv.weights[ai] + adv.momentum[ai]))
+                end
+                local C_ADV = adv.prediction_error * 0.6
+                
+            
+                local tent = v2.tent_map
+                tent.x = tent.x < 0.5 and tent.mu * tent.x or tent.mu * (1 - tent.x)
+                tent.x = math.max(0.001, math.min(0.999, tent.x))
+                local C_TENT = (tent.x - 0.5) * 0.7
+                
+              
+                local brown = v2.brownian
+                brown.drift = brown.drift * 0.95 + enhanced_random(-50, 50, "timing") / 100 * 0.1
+                brown.v = brown.v * 0.8 + enhanced_random(-100, 100, "body_left") / 100 * 0.35 + brown.drift
+                brown.x = math.max(-jitter_variance, math.min(jitter_variance, (brown.x + brown.v) * 0.92))
+                local C_BROWN = brown.x * 0.4
+                
+                
+                local xor = v2.xorshift
+                xor.state = bit.bxor(xor.state, bit.lshift(xor.state, 13))
+                xor.state = bit.bxor(xor.state, bit.rshift(xor.state, 17))
+                xor.state = bit.bxor(xor.state, bit.lshift(xor.state, 5))
+                local C_XOR = ((xor.state % 2000) - 1000) / 1000 * 0.45
+                
+               
+                local fusion = v2.multi_fusion
+                local fusion_inputs = {C_HYPER, C_CHEN, C_SPROTT, C_DUAL, C_QUANTUM_ENT}
+                local C_FUSION = 0
+                for fi = 1, math.min(#fusion.scales, #fusion_inputs) do
+                    C_FUSION = C_FUSION + fusion_inputs[fi] * fusion.scale_weights[fi] * fusion.scales[fi]
+                end
+                
+               
+                local bait = v2.resolver_bait
+                bait.bait_cd = bait.bait_cd - 1
+                if bait.bait_cd <= 0 and inject_true_entropy() % 100 < 12 then
+                    bait.active = true
+                    bait.bait_duration = enhanced_random(4, 10, "timing")
+                    bait.bait_cd = enhanced_random(15, 35, "timing")
+                    for bi = 1, 4 do
+                        bait.bait_pattern[bi] = enhanced_random(-100, 100, "body_left") / 100
+                    end
+                end
+                local C_BAIT = 0
+                if bait.active then
+                    bait.bait_duration = bait.bait_duration - 1
+                    if bait.bait_duration <= 0 then
+                        bait.active = false
+                        C_BAIT = enhanced_random(-jitter_variance * 2, jitter_variance * 2, "body_left")
+                    else
+                        local bait_idx = (globals.tickcount() % 4) + 1
+                        C_BAIT = bait.bait_pattern[bait_idx] * jitter_variance * 0.3
+                    end
+                end
+                
+                local mixer = v2.chaos_mixer
+                if #mixer.ring_buffer < 32 then
+                    for mi = 1, 32 do mixer.ring_buffer[mi] = 0 end
+                end
+                local mixer_input = C1 + C_HYPER + C_CHEN + C8
+                mixer.ring_buffer[mixer.write_idx] = mixer_input
+                mixer.write_idx = (mixer.write_idx % 32) + 1
+                local C_MIXER = 0
+                for _, offset in ipairs(mixer.read_offsets) do
+                    local read_idx = ((mixer.write_idx - offset - 1) % 32) + 1
+                    C_MIXER = C_MIXER + mixer.ring_buffer[read_idx] * 0.2
+                end
+                mixer.feedback = mixer.feedback * 0.7 + C_MIXER * 0.3
+                C_MIXER = C_MIXER + mixer.feedback * 0.4
+                
+                local tw = v2.time_warp
+                local cur_time = globals.curtime()
+                if tw.base_time == 0 then tw.base_time = cur_time end
+                tw.warp_factor = 1.0 + math.sin((cur_time - tw.base_time) * 3.7) * 0.5
+                local warped_time = (cur_time - tw.base_time) * tw.warp_factor
+                for i = 1, 4 do
+                    tw.phase_shifts[i] = math.sin(warped_time * (1.3 + i * 0.7) + tw.phase_shifts[i] * 0.1)
+                end
+                local C_TIMEWARP = (tw.phase_shifts[1] + tw.phase_shifts[2] - tw.phase_shifts[3] - tw.phase_shifts[4]) * 0.35
+                
+                local ep = v2.entropy_pool
+                if #ep.pool < 16 then
+                    for ei = 1, 16 do ep.pool[ei] = inject_true_entropy() % 1000 / 1000 end
+                end
+                ep.pool[ep.pool_idx] = (ep.pool[ep.pool_idx] + C1 + C_XOR + inject_true_entropy() % 100 / 100) % 1.0
+                ep.pool_idx = (ep.pool_idx % 16) + 1
+                ep.mix_state = 0
+                for ei = 1, 16 do
+                    ep.mix_state = ep.mix_state + ep.pool[ei] * math.sin(ei * 0.5)
+                end
+                local C_ENTROPY = (ep.mix_state / 8 - 0.5) * 0.8
+                
+                local spike = v2.spike_generator
+                spike.cooldown = spike.cooldown - 1
+                if spike.spike_decay > 0 then
+                    spike.spike_decay = spike.spike_decay - 1
+                    spike.spike_magnitude = spike.spike_magnitude * 0.85
+                end
+                if spike.cooldown <= 0 and inject_true_entropy() % 100 < 18 then
+                    spike.cooldown = enhanced_random(5, 15, "timing")
+                    spike.spike_magnitude = enhanced_random(-150, 150, "body_left") / 100
+                    spike.spike_decay = enhanced_random(3, 8, "timing")
+                    spike.last_spike = globals.tickcount()
+                end
+                local C_SPIKE = spike.spike_magnitude * 0.7
+                
+                local cs = v2.chaos_switch
+                cs.switch_timer = cs.switch_timer - 1
+                if cs.switch_timer <= 0 then
+                    cs.switch_timer = enhanced_random(8, 20, "timing")
+                    for i = 1, 3 do
+                        cs.active_systems[i] = (inject_true_entropy() % 8) + 1
+                    end
+                    if #cs.weight_mutations < 8 then
+                        for i = 1, 8 do cs.weight_mutations[i] = 1.0 end
+                    end
+                    local mutate_idx = (inject_true_entropy() % 8) + 1
+                    cs.weight_mutations[mutate_idx] = 0.5 + (inject_true_entropy() % 100) / 100
+                end
+                local chaos_sources = {C_HYPER, C_CHEN, C_SPROTT, C_AIZAWA, C_THOMAS, C_DUAL, C_QUANTUM_ENT, C_LSTM}
+                local C_SWITCH = 0
+                for i = 1, 3 do
+                    local sys_idx = cs.active_systems[i]
+                    local weight = cs.weight_mutations[sys_idx] or 1.0
+                    C_SWITCH = C_SWITCH + (chaos_sources[sys_idx] or 0) * weight * 0.4
+                end
+                
+                local pc = v2.prime_chaos
+                pc.idx = (pc.idx % #pc.primes) + 1
+                local prime = pc.primes[pc.idx]
+                pc.accumulator = (pc.accumulator * prime + inject_true_entropy()) % 10000
+                local C_PRIME = (pc.accumulator / 5000 - 1) * 0.5
+                
+                local bc = v2.bit_chaos
+                bc.state32 = bit.bxor(bc.state32, bit.lshift(bc.state32, bc.rotate_amount))
+                bc.state32 = bit.bxor(bc.state32, bit.rshift(bc.state32, 13))
+                bc.state32 = bit.bxor(bc.state32, bit.lshift(bc.state32, 17))
+                bc.rotate_amount = 5 + (bc.state32 % 8)
+                local C_BITCHAOS = ((bc.state32 % 2000) - 1000) / 1000 * 0.55
+                
+                local gr = v2.golden_ratio
+                gr.phase = (gr.phase + gr.phi) % (math.pi * 2)
+                gr.accumulator = gr.accumulator + math.sin(gr.phase * gr.phi) * 0.1
+                gr.accumulator = gr.accumulator * 0.95
+                local C_GOLDEN = gr.accumulator + math.cos(gr.phase * 2.618) * 0.3
+                
+                local sc = v2.sinusoidal_chaos
+                local C_SINUSOIDAL = 0
+                for i = 1, 5 do
+                    sc.phases[i] = (sc.phases[i] + sc.freqs[i] * 0.1) % (math.pi * 2)
+                    C_SINUSOIDAL = C_SINUSOIDAL + math.sin(sc.phases[i] + C1 * i) * sc.amps[i]
+                end
+                C_SINUSOIDAL = C_SINUSOIDAL * 0.25
+                
+                local dc = v2.derivative_chaos
+                local current_val = C1 + C_HYPER + C_CHEN
+                table.insert(dc.last_values, 1, current_val)
+                if #dc.last_values > 4 then table.remove(dc.last_values) end
+                if #dc.last_values >= 2 then
+                    local new_velocity = dc.last_values[1] - dc.last_values[2]
+                    local new_acceleration = new_velocity - dc.velocity
+                    dc.jerk = new_acceleration - dc.acceleration
+                    dc.acceleration = new_acceleration
+                    dc.velocity = new_velocity
+                end
+                local C_DERIVATIVE = (dc.velocity * 0.4 + dc.acceleration * 0.8 + dc.jerk * 1.2) * 0.5
+                
+                -- V3 Enhanced Chaos Systems (consolidated to reduce locals)
+                local v3 = v2  -- reuse v2 reference
+                v3.C_V3 = {}  -- store all V3 chaos outputs in table
+                
+                -- Halvorsen Attractor
+                local halv = v3.halvorsen_attractor
+                halv.x = math.max(-15, math.min(15, halv.x + (-halv.a * halv.x - 4 * halv.y - 4 * halv.z - halv.y * halv.y) * 0.015))
+                halv.y = math.max(-15, math.min(15, halv.y + (-halv.a * halv.y - 4 * halv.z - 4 * halv.x - halv.z * halv.z) * 0.015))
+                halv.z = math.max(-15, math.min(15, halv.z + (-halv.a * halv.z - 4 * halv.x - 4 * halv.y - halv.x * halv.x) * 0.015))
+                v3.C_V3.HALVORSEN = (halv.x + halv.y - halv.z) * 0.08
+                
+                -- Dadras Attractor
+                local dad = v3.dadras_attractor
+                dad.x = math.max(-20, math.min(20, dad.x + (dad.y - dad.a * dad.x + dad.b * dad.y * dad.z) * 0.008))
+                dad.y = math.max(-20, math.min(20, dad.y + (dad.c * dad.y - dad.x * dad.z + dad.z) * 0.008))
+                dad.z = math.max(-20, math.min(20, dad.z + (dad.d * dad.x * dad.y - dad.e * dad.z) * 0.008))
+                v3.C_V3.DADRAS = (dad.x * 0.06 + dad.y * 0.05 - dad.z * 0.04)
+                
+                -- Rabinovich-Fabrikant Attractor
+                local rab = v3.rabinovich_attractor
+                rab.x = math.max(-3, math.min(3, rab.x + (rab.y * (rab.z - 1 + rab.x * rab.x) + rab.gamma * rab.x) * 0.01))
+                rab.y = math.max(-3, math.min(3, rab.y + (rab.x * (3 * rab.z + 1 - rab.x * rab.x) + rab.gamma * rab.y) * 0.01))
+                rab.z = math.max(-3, math.min(3, rab.z + (-2 * rab.z * (rab.alpha + rab.x * rab.y)) * 0.01))
+                v3.C_V3.RABINOVICH = (rab.x * 0.4 + rab.y * 0.35) * 0.8
+                
+                -- Cellular Automaton (simplified)
+                local ca = v3.cellular_automaton
+                ca.generation = ca.generation + 1
+                ca.state = bit.bxor(bit.bor(bit.lshift(ca.state, 1), bit.rshift(ca.state, 31)), inject_true_entropy() % 65536)
+                v3.C_V3.CELLULAR = ((ca.state % 2000) - 1000) / 1000 * 0.65
+                
+                -- Perlin-like Noise (simplified)
+                local pn = v3.perlin_noise
+                pn.time_offset = pn.time_offset + 0.037
+                v3.C_V3.PERLIN = math.sin(pn.time_offset * 2.3) * 0.3 + math.sin(pn.time_offset * 5.7) * 0.15 + math.sin(pn.time_offset * 11.3) * 0.1
+                
+                -- Temporal Correlation Breaker
+                local tb = v3.temporal_breaker
+                if #tb.time_slots < 8 then for i = 1, 8 do tb.time_slots[i] = enhanced_random(-100, 100, "body_left") / 100 end end
+                tb.slot_idx = (tb.slot_idx % 8) + 1
+                tb.time_slots[tb.slot_idx] = tb.time_slots[tb.slot_idx] * 0.7 + C1 * 0.3
+                if inject_true_entropy() % 100 < 12 then
+                    tb.time_slots[(inject_true_entropy() % 8) + 1], tb.time_slots[(inject_true_entropy() % 8) + 1] = 
+                        tb.time_slots[(inject_true_entropy() % 8) + 1] * -1, tb.time_slots[(inject_true_entropy() % 8) + 1]
+                end
+                v3.C_V3.TEMPORAL = (tb.time_slots[1] + tb.time_slots[3] - tb.time_slots[5] - tb.time_slots[7]) * 0.3
+                
+                -- Adaptive Mutation (simplified)
+                local am = v3.adaptive_mutation
+                if #am.gene_pool < 4 then for i = 1, 4 do am.gene_pool[i] = enhanced_random(-100, 100, "body_left") / 100 end end
+                am.generation = am.generation + 1
+                if am.generation % 5 == 0 then
+                    am.gene_pool[(inject_true_entropy() % 4) + 1] = enhanced_random(-150, 150, "body_left") / 100
+                end
+                v3.C_V3.MUTATION = (am.gene_pool[1] + am.gene_pool[2] - am.gene_pool[3]) * 0.5
+                
+                -- Spectral Anti-Pattern
+                local sa = v3.spectral_analyzer
+                sa.anti_harmonic = sa.anti_harmonic * 0.9 + (C1 + C_HYPER) * 0.1
+                if math.abs(sa.anti_harmonic) > 0.5 then sa.anti_harmonic = -sa.anti_harmonic * 0.8 end
+                v3.C_V3.SPECTRAL = sa.anti_harmonic * 0.6
+                
+                -- Chaos Resonance (simplified)
+                local cr = v3.chaos_resonance
+                cr.resonators[1] = cr.resonators[1] * 0.95 + v3.C_V3.HALVORSEN * 0.3
+                cr.resonators[2] = cr.resonators[2] * 0.95 + v3.C_V3.DADRAS * 0.3
+                cr.resonators[3] = cr.resonators[3] * 0.95 + v3.C_V3.RABINOVICH * 0.3
+                v3.C_V3.RESONANCE = (cr.resonators[1] + cr.resonators[2] - cr.resonators[3]) * 0.4
+                
+                -- Stochastic Jump
+                local sj = v3.stochastic_jump
+                sj.cooldown = math.max(0, sj.cooldown - 1)
+                if sj.cooldown == 0 and inject_true_entropy() % 100 < 10 then
+                    sj.jump_magnitude = enhanced_random(-200, 200, "body_left") / 100
+                    sj.cooldown = enhanced_random(4, 12, "timing")
+                else
+                    sj.jump_magnitude = sj.jump_magnitude * 0.85
+                end
+                v3.C_V3.STOCHASTIC = sj.jump_magnitude * 0.7
+                
+                -- Bifurcation Control
+                local bif = v3.bifurcation_control
+                bif.r_param = bif.r_param + bif.r_direction * 0.005
+                if bif.r_param > 4.0 then bif.r_direction = -1 elseif bif.r_param < 2.8 then bif.r_direction = 1 end
+                v3.C_V3.BIFURCATION = (bif.r_param * v2.logistic.x * (1 - v2.logistic.x) - 0.5) * 0.6
+                
+                -- Anti-ML Defense
+                local aml = v3.anti_ml_defense
+                aml.pattern_switch_cd = aml.pattern_switch_cd - 1
+                if aml.pattern_switch_cd <= 0 then
+                    aml.pattern_switch_cd = enhanced_random(10, 25, "timing")
+                    aml.deception_mode = (aml.deception_mode + 1) % 5
+                end
+                v3.C_V3.ANTIML = ({
+                    v3.C_V3.HALVORSEN * 1.2,
+                    -C1 * 0.8 + enhanced_random(-50, 50, "body_left") / 100,
+                    math.sin(globals.curtime() * 7.3) * 0.6,
+                    (v3.C_V3.DADRAS - v3.C_V3.RABINOVICH) * 0.5,
+                    enhanced_random(-100, 100, "body_left") / 100
+                })[aml.deception_mode + 1] or 0
+                
+                -- 4D Hyperchaos
+                local hc4 = v3.hyperchaos_4d
+                hc4.x = math.max(-50, math.min(50, hc4.x + (hc4.a * (hc4.y - hc4.x) + hc4.w) * 0.008))
+                hc4.y = math.max(-50, math.min(50, hc4.y + (hc4.b * hc4.x - hc4.x * hc4.z) * 0.008))
+                hc4.z = math.max(0, math.min(60, hc4.z + (hc4.x * hc4.y - hc4.c * hc4.z) * 0.008))
+                hc4.w = math.max(-30, math.min(30, hc4.w + (-hc4.y * hc4.z + hc4.d * hc4.w) * 0.008))
+                v3.C_V3.HYPERCHAOS4D = (hc4.x * 0.02 + hc4.y * 0.018 - hc4.z * 0.015 + hc4.w * 0.025)
                 
                 local markov_outputs = {
                     enhanced_random(-jitter_variance, 0, "body_left"),
@@ -3711,41 +4280,133 @@ local function calc_body_yaw(vals, yaw_offset)
                     
                     if pattern_detected and (globals.tickcount() - pd.last_break) > 5 then
                         pd.last_break = globals.tickcount()
-                        v2.adaptive.scale = math.min(3.0, v2.adaptive.scale + 0.35)
-                        v2.divergence_power = math.min(4.0, v2.divergence_power + 0.3)
+                        v2.adaptive.scale = math.min(4.0, v2.adaptive.scale + 0.45)
+                        v2.divergence_power = math.min(6.0, v2.divergence_power + 0.4)
                         
-                        local break_mode = inject_true_entropy() % 10
+                        local break_mode = inject_true_entropy() % 34
                         if break_mode == 0 then
-                            base_left = enhanced_random(-jitter_variance * 2.8, jitter_variance * 2.8, "body_left")
+                            base_left = enhanced_random(-jitter_variance * 3.5, jitter_variance * 3.5, "body_left")
                             base_right = -base_left * (0.5 + (inject_true_entropy() % 90) / 100)
                         elseif break_mode == 1 then
-                            base_left = v2.duffing.x * jitter_variance * 2.5
-                            base_right = v2.chua.y * jitter_variance * 2.3
+                            base_left = v2.duffing.x * jitter_variance * 3.0
+                            base_right = v2.chua.y * jitter_variance * 2.8
                         elseif break_mode == 2 then
-                            base_left = (C1 + C3 + C5 + C9 + C13) * jitter_variance * 2.0
-                            base_right = (C2 + C4 + C6 + C10 + C14) * jitter_variance * 2.0
+                            base_left = (C1 + C3 + C5 + C9 + C13) * jitter_variance * 2.5
+                            base_right = (C2 + C4 + C6 + C10 + C14) * jitter_variance * 2.5
                         elseif break_mode == 3 then
                             v2.lorenz.x = enhanced_random(-30, 30, "body_left") / 10
                             v2.rossler.x = enhanced_random(-25, 25, "body_right") / 10
                             v2.henon.x = enhanced_random(-120, 120, "body_left") / 100
+                            v2.chen_attractor.x = enhanced_random(-20, 20, "body_left") / 10
+                            v2.sprott_attractor.x = enhanced_random(-20, 20, "body_right") / 10
                         elseif break_mode == 4 then
-                            base_left = lfsr_val * jitter_variance * 2.6
-                            base_right = -lfsr_val * jitter_variance * 2.3
+                            base_left = C8 * jitter_variance * 3.2
+                            base_right = -C8 * jitter_variance * 2.9
                         elseif break_mode == 5 then
-                            base_left = neural_output * jitter_variance * 2.8
-                            base_right = -neural_output * jitter_variance * 2.5
+                            base_left = neural_output * jitter_variance * 3.5
+                            base_right = -neural_output * jitter_variance * 3.2
                         elseif break_mode == 6 then
-                            base_left = C12 * 2.3
-                            base_right = -C12 * 2.0
+                            base_left = C12 * 2.8
+                            base_right = -C12 * 2.5
                         elseif break_mode == 7 then
-                            base_left = (v2.multi_scale.fast + v2.multi_scale.medium) * jitter_variance * 2.2
-                            base_right = (v2.multi_scale.slow + v2.multi_scale.ultra_slow) * jitter_variance * 2.2
+                            base_left = (v2.multi_scale.fast + v2.multi_scale.medium) * jitter_variance * 2.8
+                            base_right = (v2.multi_scale.slow + v2.multi_scale.ultra_slow) * jitter_variance * 2.8
                         elseif break_mode == 8 then
-                            base_left = fractal_noise * jitter_variance * 2.5
-                            base_right = -fractal_noise * jitter_variance * 2.2
+                            base_left = v2.fractal.noise * jitter_variance * 3.0
+                            base_right = -v2.fractal.noise * jitter_variance * 2.7
+                        elseif break_mode == 9 then
+                            base_left = (C14 + C15) * jitter_variance * 3.0
+                            base_right = -(C14 + C15) * jitter_variance * 2.7
+                        elseif break_mode == 10 then
+                            base_left = C_HYPER * jitter_variance * 3.5
+                            base_right = -C_HYPER * jitter_variance * 3.2
+                        elseif break_mode == 11 then
+                            base_left = (C_CHEN + C_SPROTT) * jitter_variance * 3.2
+                            base_right = -(C_CHEN - C_SPROTT) * jitter_variance * 2.9
+                        elseif break_mode == 12 then
+                            base_left = C_QUANTUM_ENT * jitter_variance * 3.8
+                            base_right = -C_QUANTUM_ENT * jitter_variance * 3.5
+                        elseif break_mode == 13 then
+                            base_left = C_LSTM * jitter_variance * 4.0
+                            base_right = -C_LSTM * jitter_variance * 3.7
+                        elseif break_mode == 14 then
+                            base_left = (C_DUAL + C_ADV) * jitter_variance * 3.2
+                            base_right = -(C_DUAL - C_ADV) * jitter_variance * 2.9
+                        elseif break_mode == 15 then
+                            base_left = (C_HYPER + C_CHEN + C_QUANTUM_ENT + C_LSTM) * jitter_variance * 2.5
+                            base_right = -(C_SPROTT + C_AIZAWA + C_THOMAS + C_ADV) * jitter_variance * 2.5
+                        elseif break_mode == 16 then
+                           
+                            base_left = (C_SPIKE + C_ENTROPY) * jitter_variance * 3.5
+                            base_right = -(C_SPIKE - C_ENTROPY) * jitter_variance * 3.2
+                        elseif break_mode == 17 then
+                        
+                            base_left = (C_MIXER + C_TIMEWARP) * jitter_variance * 3.0
+                            base_right = -(C_MIXER - C_TIMEWARP) * jitter_variance * 2.8
+                        elseif break_mode == 18 then
+                           
+                            base_left = (C_PRIME + C_BITCHAOS) * jitter_variance * 3.2
+                            base_right = -(C_PRIME - C_BITCHAOS) * jitter_variance * 3.0
+                        elseif break_mode == 19 then
+                          
+                            base_left = (C_GOLDEN + C_SINUSOIDAL) * jitter_variance * 2.8
+                            base_right = -(C_GOLDEN - C_SINUSOIDAL) * jitter_variance * 2.6
+                        elseif break_mode == 20 then
+                         
+                            base_left = C_DERIVATIVE * jitter_variance * 4.0
+                            base_right = -C_DERIVATIVE * jitter_variance * 3.7
+                        elseif break_mode == 21 then
+                            -- V3: Halvorsen + Dadras combo
+                            base_left = (v3.C_V3.HALVORSEN + v3.C_V3.DADRAS) * jitter_variance * 3.8
+                            base_right = -(v3.C_V3.HALVORSEN - v3.C_V3.DADRAS) * jitter_variance * 3.5
+                        elseif break_mode == 22 then
+                            -- V3: Rabinovich extreme sensitivity
+                            base_left = v3.C_V3.RABINOVICH * jitter_variance * 4.5
+                            base_right = -v3.C_V3.RABINOVICH * jitter_variance * 4.2
+                        elseif break_mode == 23 then
+                            -- V3: Cellular automaton burst
+                            base_left = v3.C_V3.CELLULAR * jitter_variance * 4.0
+                            base_right = -v3.C_V3.CELLULAR * jitter_variance * 3.8
+                        elseif break_mode == 24 then
+                            -- V3: Perlin + Temporal combo
+                            base_left = (v3.C_V3.PERLIN + v3.C_V3.TEMPORAL) * jitter_variance * 3.5
+                            base_right = -(v3.C_V3.PERLIN - v3.C_V3.TEMPORAL) * jitter_variance * 3.2
+                        elseif break_mode == 25 then
+                            -- V3: Mutation + Spectral
+                            base_left = (v3.C_V3.MUTATION + v3.C_V3.SPECTRAL) * jitter_variance * 3.8
+                            base_right = -(v3.C_V3.MUTATION - v3.C_V3.SPECTRAL) * jitter_variance * 3.5
+                        elseif break_mode == 26 then
+                            -- V3: Resonance network burst
+                            base_left = v3.C_V3.RESONANCE * jitter_variance * 4.2
+                            base_right = -v3.C_V3.RESONANCE * jitter_variance * 3.9
+                        elseif break_mode == 27 then
+                            -- V3: Stochastic jump extreme
+                            base_left = v3.C_V3.STOCHASTIC * jitter_variance * 5.0
+                            base_right = -v3.C_V3.STOCHASTIC * jitter_variance * 4.7
+                        elseif break_mode == 28 then
+                            -- V3: Bifurcation edge of chaos
+                            base_left = v3.C_V3.BIFURCATION * jitter_variance * 4.0
+                            base_right = -v3.C_V3.BIFURCATION * jitter_variance * 3.7
+                        elseif break_mode == 29 then
+                            -- V3: Anti-ML deception burst
+                            base_left = v3.C_V3.ANTIML * jitter_variance * 4.5
+                            base_right = -v3.C_V3.ANTIML * jitter_variance * 4.2
+                        elseif break_mode == 30 then
+                            -- V3: 4D Hyperchaos
+                            base_left = v3.C_V3.HYPERCHAOS4D * jitter_variance * 4.0
+                            base_right = -v3.C_V3.HYPERCHAOS4D * jitter_variance * 3.7
+                        elseif break_mode == 31 then
+                            -- V3: All new attractors combined
+                            base_left = (v3.C_V3.HALVORSEN + v3.C_V3.DADRAS + v3.C_V3.RABINOVICH + v3.C_V3.HYPERCHAOS4D) * jitter_variance * 2.5
+                            base_right = -(v3.C_V3.HALVORSEN - v3.C_V3.DADRAS + v3.C_V3.RABINOVICH - v3.C_V3.HYPERCHAOS4D) * jitter_variance * 2.3
+                        elseif break_mode == 32 then
+                            -- V3: All new systems combined
+                            base_left = (v3.C_V3.CELLULAR + v3.C_V3.PERLIN + v3.C_V3.TEMPORAL + v3.C_V3.MUTATION + v3.C_V3.SPECTRAL) * jitter_variance * 2.0
+                            base_right = -(v3.C_V3.RESONANCE + v3.C_V3.STOCHASTIC + v3.C_V3.BIFURCATION + v3.C_V3.ANTIML) * jitter_variance * 2.0
                         else
-                            base_left = (C14 + C15) * jitter_variance * 2.4
-                            base_right = -(C14 + C15) * jitter_variance * 2.1
+                           
+                            base_left = (C_MIXER + C_ENTROPY + C_SPIKE + C_SWITCH + C_DERIVATIVE + v3.C_V3.HALVORSEN + v3.C_V3.STOCHASTIC) * jitter_variance * 1.8
+                            base_right = -(C_TIMEWARP + C_PRIME + C_BITCHAOS + C_GOLDEN + C_SINUSOIDAL + v3.C_V3.RABINOVICH + v3.C_V3.ANTIML) * jitter_variance * 1.8
                         end
                         
                         pd.history = {}
@@ -3803,6 +4464,47 @@ local function calc_body_yaw(vals, yaw_offset)
                 total_left = total_left + quantum_contrib * jitter_variance
                 total_left = total_left + neural_output * jitter_variance * 0.45
                 total_left = total_left + v2.micro_left
+              
+                total_left = total_left + C_HYPER * jitter_variance * 0.8
+                total_left = total_left + C_CHEN * jitter_variance * 0.7
+                total_left = total_left + C_SPROTT * jitter_variance * 0.65
+                total_left = total_left + C_AIZAWA * jitter_variance * 0.6
+                total_left = total_left + C_THOMAS * jitter_variance * 0.55
+                total_left = total_left + C_DUAL * jitter_variance * 0.75
+                total_left = total_left + C_QUANTUM_ENT * jitter_variance * 0.85
+                total_left = total_left + C_LSTM * jitter_variance * 0.9
+                total_left = total_left + C_ADV * jitter_variance * 0.7
+                total_left = total_left + C_TENT * jitter_variance * 0.5
+                total_left = total_left + C_BROWN * jitter_variance * 0.6
+                total_left = total_left + C_XOR * jitter_variance * 0.55
+                total_left = total_left + C_FUSION * jitter_variance * 0.8
+                total_left = total_left + C_BAIT
+             
+                total_left = total_left + C_MIXER * jitter_variance * 0.75
+                total_left = total_left + C_TIMEWARP * jitter_variance * 0.7
+                total_left = total_left + C_ENTROPY * jitter_variance * 0.85
+                total_left = total_left + C_SPIKE * jitter_variance * 1.2
+                total_left = total_left + C_SWITCH * jitter_variance * 0.9
+                total_left = total_left + C_PRIME * jitter_variance * 0.6
+                total_left = total_left + C_BITCHAOS * jitter_variance * 0.65
+                total_left = total_left + C_GOLDEN * jitter_variance * 0.55
+                total_left = total_left + C_SINUSOIDAL * jitter_variance * 0.7
+                total_left = total_left + C_DERIVATIVE * jitter_variance * 0.8
+                
+                -- V3 Enhanced Chaos Sources
+                total_left = total_left + v3.C_V3.HALVORSEN * jitter_variance * 0.95
+                total_left = total_left + v3.C_V3.DADRAS * jitter_variance * 0.9
+                total_left = total_left + v3.C_V3.RABINOVICH * jitter_variance * 1.1
+                total_left = total_left + v3.C_V3.CELLULAR * jitter_variance * 0.85
+                total_left = total_left + v3.C_V3.PERLIN * jitter_variance * 0.75
+                total_left = total_left + v3.C_V3.TEMPORAL * jitter_variance * 0.8
+                total_left = total_left + v3.C_V3.MUTATION * jitter_variance * 1.0
+                total_left = total_left + v3.C_V3.SPECTRAL * jitter_variance * 0.9
+                total_left = total_left + v3.C_V3.RESONANCE * jitter_variance * 0.85
+                total_left = total_left + v3.C_V3.STOCHASTIC * jitter_variance * 1.3
+                total_left = total_left + v3.C_V3.BIFURCATION * jitter_variance * 0.7
+                total_left = total_left + v3.C_V3.ANTIML * jitter_variance * 1.0
+                total_left = total_left + v3.C_V3.HYPERCHAOS4D * jitter_variance * 0.95
                 
                 local total_right = base_right * v2.adaptive.scale * v2.adaptive.threat_multiplier
                 total_right = total_right + C2 * jitter_variance + C4 * jitter_variance + C6 * jitter_variance
@@ -3815,6 +4517,47 @@ local function calc_body_yaw(vals, yaw_offset)
                 total_right = total_right - quantum_contrib * jitter_variance * 0.8
                 total_right = total_right - neural_output * jitter_variance * 0.4
                 total_right = total_right + v2.micro_right
+              
+                total_right = total_right - C_HYPER * jitter_variance * 0.7
+                total_right = total_right + C_CHEN * jitter_variance * 0.6
+                total_right = total_right - C_SPROTT * jitter_variance * 0.55
+                total_right = total_right + C_AIZAWA * jitter_variance * 0.5
+                total_right = total_right - C_THOMAS * jitter_variance * 0.45
+                total_right = total_right - C_DUAL * jitter_variance * 0.65
+                total_right = total_right - C_QUANTUM_ENT * jitter_variance * 0.75
+                total_right = total_right - C_LSTM * jitter_variance * 0.8
+                total_right = total_right + C_ADV * jitter_variance * 0.6
+                total_right = total_right - C_TENT * jitter_variance * 0.45
+                total_right = total_right + C_BROWN * jitter_variance * 0.5
+                total_right = total_right - C_XOR * jitter_variance * 0.5
+                total_right = total_right - C_FUSION * jitter_variance * 0.7
+                total_right = total_right - C_BAIT * 0.85
+             
+                total_right = total_right - C_MIXER * jitter_variance * 0.65
+                total_right = total_right + C_TIMEWARP * jitter_variance * 0.6
+                total_right = total_right - C_ENTROPY * jitter_variance * 0.75
+                total_right = total_right - C_SPIKE * jitter_variance * 1.1
+                total_right = total_right + C_SWITCH * jitter_variance * 0.8
+                total_right = total_right - C_PRIME * jitter_variance * 0.55
+                total_right = total_right + C_BITCHAOS * jitter_variance * 0.6
+                total_right = total_right - C_GOLDEN * jitter_variance * 0.5
+                total_right = total_right - C_SINUSOIDAL * jitter_variance * 0.65
+                total_right = total_right + C_DERIVATIVE * jitter_variance * 0.7
+                
+                -- V3 Enhanced Chaos Sources (asymmetric for unpredictability)
+                total_right = total_right - v3.C_V3.HALVORSEN * jitter_variance * 0.85
+                total_right = total_right + v3.C_V3.DADRAS * jitter_variance * 0.8
+                total_right = total_right - v3.C_V3.RABINOVICH * jitter_variance * 1.0
+                total_right = total_right + v3.C_V3.CELLULAR * jitter_variance * 0.75
+                total_right = total_right - v3.C_V3.PERLIN * jitter_variance * 0.65
+                total_right = total_right - v3.C_V3.TEMPORAL * jitter_variance * 0.7
+                total_right = total_right - v3.C_V3.MUTATION * jitter_variance * 0.9
+                total_right = total_right + v3.C_V3.SPECTRAL * jitter_variance * 0.8
+                total_right = total_right - v3.C_V3.RESONANCE * jitter_variance * 0.75
+                total_right = total_right - v3.C_V3.STOCHASTIC * jitter_variance * 1.2
+                total_right = total_right + v3.C_V3.BIFURCATION * jitter_variance * 0.6
+                total_right = total_right - v3.C_V3.ANTIML * jitter_variance * 0.9
+                total_right = total_right + v3.C_V3.HYPERCHAOS4D * jitter_variance * 0.85
                 
                 if v2.enemy_tracking.aim_detected then
                     if v2.enemy_tracking.counter_mode == 0 then
@@ -3828,8 +4571,8 @@ local function calc_body_yaw(vals, yaw_offset)
                         total_left = total_right * 1.2
                         total_right = swap * 1.2
                     else
-                        total_left = total_left + fractal_noise * jitter_variance * 1.5
-                        total_right = total_right - fractal_noise * jitter_variance * 1.3
+                        total_left = total_left + v2.fractal.noise * jitter_variance * 1.5
+                        total_right = total_right - v2.fractal.noise * jitter_variance * 1.3
                     end
                     
                     if v2.enemy_tracking.threat_level >= 2 then
@@ -3855,8 +4598,8 @@ local function calc_body_yaw(vals, yaw_offset)
                     pd.consecutive_similar = 0
                 end
                 
-                state.jitter_offset_left = math.max(-jitter_variance * 2.8, math.min(jitter_variance * 2.8, total_left))
-                state.jitter_offset_right = math.max(-jitter_variance * 2.8, math.min(jitter_variance * 2.8, total_right))
+                state.jitter_offset_left = math.max(-jitter_variance * 4.0, math.min(jitter_variance * 4.0, total_left))
+                state.jitter_offset_right = math.max(-jitter_variance * 4.0, math.min(jitter_variance * 4.0, total_right))
                 
                 v2.last_left = state.jitter_offset_left
                 v2.last_right = state.jitter_offset_right
@@ -5089,7 +5832,8 @@ local ui_decor = {
 
 do
     local http = require("gamesense/http")
-    local success_local, content = pcall(readfile, "AMGSENSE_reference.png")
+    local local_file = "AMGSENSE_reference.png"
+    local success_local, content = pcall(readfile, local_file)
     if success_local and content then
         ui_decor.logo = renderer.load_png(content, 1867, 1355)
     end
@@ -5097,6 +5841,7 @@ do
         http.get("https://raw.githubusercontent.com/amgsense/AMGSENSE/refs/heads/main/AMGSENSE.png", function(success, response)
             if success and response.status == 200 then
                 ui_decor.logo = renderer.load_png(response.body, 1867, 1355)
+                pcall(writefile, local_file, response.body)
             end
         end)
     end

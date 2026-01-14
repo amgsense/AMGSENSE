@@ -2998,6 +2998,7 @@ local function calc_yaw_offset(vals)
                 for i = #dr.history - 5, #dr.history do dr.pat_var = dr.pat_var + (dr.history[i] - dr.pat_mean)^2 end
                 local variance_pattern = dr.pat_var / 6 < randomization * 0.3
                 
+                -- Enhanced autocorrelation detection with multiple lags
                 local autocorr = 0
                 if #dr.history >= 8 then
                     for lag = 2, 4 do
@@ -3010,6 +3011,7 @@ local function calc_yaw_offset(vals)
                 end
                 local periodic_pattern = autocorr > randomization * randomization * 0.5
                 
+                -- Enhanced trend detection with derivative analysis
                 local trend_detected = false
                 if #dr.history >= 6 then
                     local diffs = {}
@@ -3024,14 +3026,46 @@ local function calc_yaw_offset(vals)
                     trend_detected = diff_var / #diffs < randomization * 0.1
                 end
                 
-                dr.pattern_detected = variance_pattern or periodic_pattern or trend_detected
+                -- New: Frequency domain pattern detection
+                local freq_pattern = false
+                if #dr.history >= 8 then
+                    local fft_sum = 0
+                    for i = 1, 4 do
+                        local freq_component = 0
+                        for j = 1, #dr.history do
+                            freq_component = freq_component + dr.history[j] * math.cos(2 * math.pi * i * j / #dr.history)
+                        end
+                        fft_sum = fft_sum + math.abs(freq_component)
+                    end
+                    freq_pattern = fft_sum > randomization * 3
+                end
+                
+                -- New: Entropy-based pattern detection
+                local entropy_pattern = false
+                if #dr.history >= 6 then
+                    local bins = {0, 0, 0, 0, 0}
+                    for _, val in ipairs(dr.history) do
+                        local bin_idx = math.min(5, math.max(1, math.floor((val + randomization * 2) / (randomization * 0.8)) + 1))
+                        bins[bin_idx] = bins[bin_idx] + 1
+                    end
+                    local entropy = 0
+                    for _, count in ipairs(bins) do
+                        if count > 0 then
+                            local p = count / #dr.history
+                            entropy = entropy - p * math.log(p)
+                        end
+                    end
+                    entropy_pattern = entropy < 0.8  -- Low entropy = predictable
+                end
+                
+                dr.pattern_detected = variance_pattern or periodic_pattern or trend_detected or freq_pattern or entropy_pattern
             end
             
             if dr.pattern_break_cooldown > 0 then 
                 dr.pattern_break_cooldown = dr.pattern_break_cooldown - 1
             elseif dr.pattern_detected then
                 dr.pattern_break_cooldown = enhanced_random(6, 14, "timing")
-                dr.anti_resolver_mode = (dr.anti_resolver_mode + 1) % 10  
+                dr.anti_resolver_mode = (dr.anti_resolver_mode + 1) % 41  -- Updated to 41 modes (0-40)
                 dr.break_strength = randomization * 2
                 
                 if dr.anti_resolver_mode == 0 then
@@ -3451,7 +3485,9 @@ local function calc_body_yaw(vals, yaw_offset)
                 chaos_params = {
                     lorenz_sigma = 10,
                     rossler_a = 0.2,
-                    adaptive_rate = 0.01
+                    adaptive_rate = 0.01,
+                    performance_history = {},
+                    last_tune = 0
                 },
                 hyper_chaos = {
                     x = 0.1, y = 0.1, z = 0.1, w = 0.1,
@@ -3653,12 +3689,50 @@ local function calc_body_yaw(vals, yaw_offset)
             state.jitter_current_delay = math.max(MIN_DELAY, math.min(MAX_DELAY, base_delay + (delay_variance > 0 and enhanced_random(-delay_variance, delay_variance, "body_left") or 0)))
             
             if jitter_variance > 0 then
-                -- Lorenz attractor (inlined)
+                -- Lorenz attractor (inlined with adaptive parameters)
                 v2.lorenz.x = math.max(-40, math.min(40, v2.lorenz.x + v2.chaos_params.lorenz_sigma * (v2.lorenz.y - v2.lorenz.x) * 0.012))
                 v2.lorenz.y = math.max(-40, math.min(40, v2.lorenz.y + (v2.lorenz.x * (28 - v2.lorenz.z) - v2.lorenz.y) * 0.012))
                 v2.lorenz.z = math.max(0, math.min(50, v2.lorenz.z + (v2.lorenz.x * v2.lorenz.y - 2.667 * v2.lorenz.z) * 0.012))
                 
-                -- Rossler attractor (inlined)
+                -- Adaptive chaos parameter tuning
+                if globals.tickcount() - v2.chaos_params.last_tune > 50 then
+                    v2.chaos_params.last_tune = globals.tickcount()
+                    table.insert(v2.chaos_params.performance_history, {
+                        diversity = cd and cd.diversity_score or 1.0,
+                        pattern_detected = dr and dr.pattern_detected or false,
+                        threat_level = v2.enemy_tracking.threat_level or 0
+                    })
+                    if #v2.chaos_params.performance_history > 10 then
+                        table.remove(v2.chaos_params.performance_history, 1)
+                    end
+                    
+                    -- Tune parameters based on recent performance
+                    if #v2.chaos_params.performance_history >= 5 then
+                        local avg_diversity = 0
+                        local pattern_count = 0
+                        for _, perf in ipairs(v2.chaos_params.performance_history) do
+                            avg_diversity = avg_diversity + perf.diversity
+                            if perf.pattern_detected then pattern_count = pattern_count + 1 end
+                        end
+                        avg_diversity = avg_diversity / #v2.chaos_params.performance_history
+                        
+                        -- If patterns are being detected too often, increase chaos
+                        if pattern_count >= 3 then
+                            v2.chaos_params.lorenz_sigma = math.min(15, v2.chaos_params.lorenz_sigma + 0.5)
+                            v2.chaos_params.rossler_a = math.min(0.4, v2.chaos_params.rossler_a + 0.02)
+                        else
+                            v2.chaos_params.lorenz_sigma = math.max(8, v2.chaos_params.lorenz_sigma - 0.2)
+                            v2.chaos_params.rossler_a = math.max(0.15, v2.chaos_params.rossler_a - 0.01)
+                        end
+                        
+                        -- If diversity is low, increase adaptive rate
+                        if avg_diversity < 0.4 then
+                            v2.chaos_params.adaptive_rate = math.min(0.03, v2.chaos_params.adaptive_rate + 0.005)
+                        end
+                    end
+                end
+                
+                -- Rossler attractor (inlined with adaptive parameters)
                 v2.rossler.x = math.max(-25, math.min(25, v2.rossler.x + (-v2.rossler.y - v2.rossler.z) * 0.04))
                 v2.rossler.y = math.max(-25, math.min(25, v2.rossler.y + (v2.rossler.x + v2.chaos_params.rossler_a * v2.rossler.y) * 0.04))
                 v2.rossler.z = math.max(0, math.min(35, v2.rossler.z + (0.2 + v2.rossler.z * (v2.rossler.x - 5.7)) * 0.04))
@@ -3725,9 +3799,42 @@ local function calc_body_yaw(vals, yaw_offset)
                 end
                 v2.freq_phase = (globals.curtime() * v2.frequency_hopping.freq_table[v2.frequency_hopping.current_freq] * 15) % 360
                 
-                -- Enemy tracking (use v2 storage)
+                -- Enhanced Enemy tracking with multi-threat detection
                 v2.temp_me = entity.get_local_player()
                 v2.temp_threat = client.current_threat()
+                
+                -- Multi-threat detection
+                local all_players = entity.get_players(true)
+                v2.enemy_tracking.multi_threat = v2.enemy_tracking.multi_threat or {}
+                v2.enemy_tracking.threat_level = 0
+                
+                for _, enemy in ipairs(all_players) do
+                    if enemy and not entity.is_dormant(enemy) and entity.is_alive(enemy) then
+                        local e_pitch, e_yaw = entity.get_prop(enemy, "m_angEyeAngles")
+                        if e_pitch and e_yaw then
+                            if not v2.enemy_tracking.multi_threat[enemy] then
+                                v2.enemy_tracking.multi_threat[enemy] = {angles = {}, aim_detected = false}
+                            end
+                            local threat_data = v2.enemy_tracking.multi_threat[enemy]
+                            table.insert(threat_data.angles, {yaw = e_yaw, pitch = e_pitch, tick = globals.tickcount()})
+                            if #threat_data.angles > 5 then table.remove(threat_data.angles, 1) end
+                            
+                            if #threat_data.angles >= 3 then
+                                local variance = 0
+                                for i = 2, #threat_data.angles do
+                                    variance = variance + math.abs(threat_data.angles[i].yaw - threat_data.angles[i-1].yaw)
+                                end
+                                variance = variance / (#threat_data.angles - 1)
+                                threat_data.aim_detected = variance < 4
+                                if threat_data.aim_detected then
+                                    v2.enemy_tracking.threat_level = v2.enemy_tracking.threat_level + 1
+                                end
+                            end
+                        end
+                    end
+                end
+                
+                -- Primary threat tracking
                 if v2.temp_me and v2.temp_threat and not entity.is_dormant(v2.temp_threat) then
                     v2.temp_pitch, v2.temp_yaw = entity.get_prop(v2.temp_threat, "m_angEyeAngles")
                     if v2.temp_pitch and v2.temp_yaw then
@@ -3740,11 +3847,14 @@ local function calc_body_yaw(vals, yaw_offset)
                             end
                             v2.enemy_tracking.aim_variance = v2.enemy_tracking.aim_variance / (#v2.enemy_tracking.last_angles - 1)
                             v2.enemy_tracking.aim_detected = v2.enemy_tracking.aim_variance < 5
+                            
+                            -- Enhanced threat response based on multi-threat level
+                            local threat_mult = 1.0 + (v2.enemy_tracking.threat_level * 0.15)
                             if v2.enemy_tracking.aim_detected then
-                                v2.adaptive.threat_multiplier = math.min(1.5, v2.adaptive.threat_multiplier + 0.1)
-                                v2.enemy_tracking.counter_mode = (v2.enemy_tracking.counter_mode + 1) % 3
+                                v2.adaptive.threat_multiplier = math.min(2.0, v2.adaptive.threat_multiplier + 0.12 * threat_mult)
+                                v2.enemy_tracking.counter_mode = (v2.enemy_tracking.counter_mode + 1) % 5
                             else
-                                v2.adaptive.threat_multiplier = math.max(1.0, v2.adaptive.threat_multiplier - 0.05)
+                                v2.adaptive.threat_multiplier = math.max(1.0, v2.adaptive.threat_multiplier - 0.04)
                             end
                         end
                     end
@@ -4193,6 +4303,50 @@ local function calc_body_yaw(vals, yaw_offset)
                 local base_left = enhanced_random(-jitter_variance, jitter_variance, "body_left")
                 local base_right = enhanced_random(-jitter_variance, jitter_variance, "body_right")
                 
+                -- Chaos diversity monitor - ensures we're using varied sources
+                if not v2.chaos_diversity then
+                    v2.chaos_diversity = {
+                        source_usage = {},
+                        last_reset = 0,
+                        diversity_score = 1.0
+                    }
+                end
+                local cd = v2.chaos_diversity
+                
+                -- Track which chaos sources are contributing significantly
+                local significant_sources = 0
+                local chaos_contributions = {
+                    {name = "lorenz", val = math.abs(C1 or 0)},
+                    {name = "rossler", val = math.abs(C2 or 0)},
+                    {name = "duffing", val = math.abs(C3 or 0)},
+                    {name = "chua", val = math.abs(C4 or 0)},
+                    {name = "hyper", val = math.abs(C_HYPER or 0)},
+                    {name = "chen", val = math.abs(C_CHEN or 0)},
+                    {name = "quantum", val = math.abs(C_QUANTUM_ENT or 0)},
+                    {name = "lstm", val = math.abs(C_LSTM or 0)},
+                    {name = "v3_halvorsen", val = math.abs((v3.C_V3 and v3.C_V3.HALVORSEN) or 0)},
+                    {name = "v3_stochastic", val = math.abs((v3.C_V3 and v3.C_V3.STOCHASTIC) or 0)}
+                }
+                
+                for _, source in ipairs(chaos_contributions) do
+                    if source.val > 0.1 then
+                        significant_sources = significant_sources + 1
+                        cd.source_usage[source.name] = (cd.source_usage[source.name] or 0) + 1
+                    end
+                end
+                
+                cd.diversity_score = significant_sources / #chaos_contributions
+                
+                -- If diversity is too low, inject randomness to wake up dormant systems
+                if cd.diversity_score < 0.3 and globals.tickcount() - cd.last_reset > 20 then
+                    cd.last_reset = globals.tickcount()
+                    v2.lorenz.x = v2.lorenz.x + enhanced_random(-10, 10, "body_left")
+                    v2.rossler.y = v2.rossler.y + enhanced_random(-10, 10, "body_right")
+                    v2.chen_attractor.z = v2.chen_attractor.z + enhanced_random(-10, 10, "body_left")
+                    v3.halvorsen_attractor.x = v3.halvorsen_attractor.x + enhanced_random(-5, 5, "body_right")
+                    base_left = base_left + enhanced_random(-jitter_variance, jitter_variance, "body_left")
+                end
+                
                 local ts = v2.time_series
                 table.insert(ts.actual, base_left)
                 if #ts.actual > 8 then table.remove(ts.actual, 1) end
@@ -4403,6 +4557,66 @@ local function calc_body_yaw(vals, yaw_offset)
                             -- V3: All new systems combined
                             base_left = (v3.C_V3.CELLULAR + v3.C_V3.PERLIN + v3.C_V3.TEMPORAL + v3.C_V3.MUTATION + v3.C_V3.SPECTRAL) * jitter_variance * 2.0
                             base_right = -(v3.C_V3.RESONANCE + v3.C_V3.STOCHASTIC + v3.C_V3.BIFURCATION + v3.C_V3.ANTIML) * jitter_variance * 2.0
+                        elseif break_mode == 33 then
+                            -- Chaos system cross-injection
+                            v2.lorenz.x = v2.lorenz.x + C_HYPER * 2
+                            v2.rossler.y = v2.rossler.y + C_CHEN * 2
+                            v2.henon.x = v2.henon.x + C_QUANTUM_ENT * 1.5
+                            base_left = (v2.lorenz.x + v2.rossler.y + v2.henon.x) * jitter_variance * 1.5
+                            base_right = -(v2.lorenz.x - v2.rossler.y + v2.henon.x) * jitter_variance * 1.3
+                        elseif break_mode == 34 then
+                            -- Time-reversed chaos
+                            base_left = -(dr.history[#dr.history - 1] or 0) * 1.8 + enhanced_random(-randomization, randomization, "yaw_left")
+                            base_right = (dr.history[#dr.history - 2] or 0) * 1.6 + enhanced_random(-randomization, randomization, "yaw_right")
+                        elseif break_mode == 35 then
+                            -- Ensemble weight inversion
+                            local inverted_sum = 0
+                            for ei = 1, #ensemble.layer_outputs do
+                                inverted_sum = inverted_sum + ensemble.layer_outputs[ei] * (1 - ensemble.meta_weights[ei])
+                            end
+                            base_left = inverted_sum * jitter_variance * 2.5
+                            base_right = -inverted_sum * jitter_variance * 2.2
+                        elseif break_mode == 36 then
+                            -- Multi-attractor fusion burst
+                            local fusion_val = (C_HYPER + C_CHEN + C_SPROTT + C_AIZAWA + C_THOMAS + C_DUAL) / 6
+                            base_left = fusion_val * jitter_variance * 4.5
+                            base_right = -fusion_val * jitter_variance * 4.2
+                        elseif break_mode == 37 then
+                            -- Quantum decoherence spike
+                            local qe = v2.quantum_entangle
+                            qe.decoherence = 1.0
+                            local collapse_sum = 0
+                            for qi = 1, 5 do
+                                collapse_sum = collapse_sum + qe.pairs[qi].a * qe.pairs[qi].b
+                            end
+                            base_left = collapse_sum * jitter_variance * 5.0
+                            base_right = -collapse_sum * jitter_variance * 4.7
+                        elseif break_mode == 38 then
+                            -- LSTM memory wipe + random
+                            dr.v13_lstm.hidden = 0
+                            dr.v13_lstm.cell = 0
+                            dr.v13_lstm.sequence = {}
+                            base_left = enhanced_random(-randomization * 4, randomization * 4, "yaw_left")
+                            base_right = enhanced_random(-randomization * 4, randomization * 4, "yaw_right")
+                        elseif break_mode == 39 then
+                            -- Adversarial network confusion
+                            for ai = 1, #adv.weights do
+                                adv.weights[ai] = -adv.weights[ai]
+                            end
+                            base_left = dr.C_ADV * jitter_variance * 5.5
+                            base_right = -dr.C_ADV * jitter_variance * 5.2
+                        elseif break_mode == 40 then
+                            -- Chaos health emergency response
+                            if ch and ch.unhealthy_count >= 2 then
+                                base_left = enhanced_random(-randomization * 5, randomization * 5, "yaw_left")
+                                base_right = enhanced_random(-randomization * 5, randomization * 5, "yaw_right")
+                                -- Reinitialize unhealthy systems
+                                v2.lorenz.x, v2.lorenz.y, v2.lorenz.z = 0.1, 0.1, 0.1
+                                v2.rossler.x, v2.rossler.y, v2.rossler.z = 0.1, 0.1, 0.1
+                            else
+                                base_left = enhanced_random(-randomization * 3, randomization * 3, "yaw_left")
+                                base_right = enhanced_random(-randomization * 3, randomization * 3, "yaw_right")
+                            end
                         else
                            
                             base_left = (C_MIXER + C_ENTROPY + C_SPIKE + C_SWITCH + C_DERIVATIVE + v3.C_V3.HALVORSEN + v3.C_V3.STOCHASTIC) * jitter_variance * 1.8
@@ -4454,7 +4668,70 @@ local function calc_body_yaw(vals, yaw_offset)
                 v2.micro_left = v2.micro_left * 0.6 + enhanced_random(-3, 3, "body_left") * 0.4
                 v2.micro_right = v2.micro_right * 0.6 + enhanced_random(-3, 3, "body_right") * 0.4
                 
-                local total_left = base_left * v2.adaptive.scale * v2.adaptive.threat_multiplier
+                -- Velocity-adaptive chaos scaling enhancement
+                local velocity_factor = 1.0
+                if v2.temp_me then
+                    local vx, vy = entity.get_prop(v2.temp_me, "m_vecVelocity")
+                    if vx and vy then
+                        local velocity = math.sqrt(vx * vx + vy * vy)
+                        if velocity > 250 then
+                            velocity_factor = 0.65  -- Reduce chaos when moving fast
+                        elseif velocity < 5 then
+                            velocity_factor = 1.45  -- Increase chaos when standing still
+                        else
+                            velocity_factor = 1.0 + (100 - velocity) / 200
+                        end
+                    end
+                end
+                
+                -- Lag compensation awareness
+                local ping_factor = 1.0
+                local latency = client.latency()
+                if latency then
+                    if latency > 0.08 then  -- High ping (>80ms)
+                        ping_factor = 1.3  -- More chaos on high ping
+                    elseif latency < 0.02 then  -- Low ping (<20ms)
+                        ping_factor = 0.9  -- Slightly less chaos on low ping
+                    end
+                end
+                
+                -- Chaos system health monitoring
+                if not v2.chaos_health then
+                    v2.chaos_health = {
+                        system_outputs = {},
+                        health_scores = {},
+                        last_check = 0,
+                        unhealthy_count = 0
+                    }
+                end
+                local ch = v2.chaos_health
+                ch.system_outputs = {C1, C2, C3, C4, C5, C_HYPER, C_CHEN, C_SPROTT, C_QUANTUM_ENT, C_LSTM}
+                
+                if globals.tickcount() - ch.last_check > 15 then
+                    ch.last_check = globals.tickcount()
+                    ch.unhealthy_count = 0
+                    for i, output in ipairs(ch.system_outputs) do
+                        if math.abs(output) < 0.01 then  -- System producing near-zero output
+                            ch.unhealthy_count = ch.unhealthy_count + 1
+                        end
+                    end
+                    -- If too many systems are unhealthy, inject emergency chaos
+                    if ch.unhealthy_count >= 4 then
+                        base_left = base_left + enhanced_random(-jitter_variance * 2, jitter_variance * 2, "body_left")
+                        base_right = base_right + enhanced_random(-jitter_variance * 2, jitter_variance * 2, "body_right")
+                        -- Reset some chaos systems
+                        v2.lorenz.x = enhanced_random(-20, 20, "body_left") / 10
+                        v2.rossler.x = enhanced_random(-15, 15, "body_right") / 10
+                    end
+                end
+                
+                -- Enhanced cross-coupling with feedback loops
+                local cross_feedback = (C1 * C_HYPER + C3 * C_CHEN - C5 * C_SPROTT) * 0.15
+                v2.lorenz.y = v2.lorenz.y + cross_feedback * 0.3
+                v2.rossler.z = v2.rossler.z + cross_feedback * 0.25
+                v2.chen_attractor.x = v2.chen_attractor.x + cross_feedback * 0.2
+                
+                local total_left = base_left * v2.adaptive.scale * v2.adaptive.threat_multiplier * velocity_factor * ping_factor
                 total_left = total_left + C1 * jitter_variance + C3 * jitter_variance + C5 * jitter_variance
                 total_left = total_left + C9 * jitter_variance + C11 * jitter_variance + C13 * jitter_variance
                 total_left = total_left + C14 * jitter_variance * 0.6 + C15 * jitter_variance * 0.5

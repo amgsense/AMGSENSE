@@ -1,4 +1,3 @@
-
 local libs = {
     base64 = require("gamesense/base64"),
     clipboard = require("gamesense/clipboard"),
@@ -1002,12 +1001,14 @@ for _, state_name in ipairs(state_list) do
     def_config.def_tick_mode = pui_group:combobox("Tick Mode" .. ds, {"Custom", "Adaptive"})
     def_config.def_tick_speed = pui_group:slider("  Tick Delay" .. ds, 0, 14, 0, true, "t", 1)
 
-    def_config.def_pitch_mode = pui_group:combobox("Pitch" .. ds, {"Off", "Static", "Sway", "Switch", "Random"})
+    def_config.def_pitch_mode = pui_group:combobox("Pitch" .. ds, {"Off", "Static", "Random", "Jitter", "Wave", "Chaos"})
     def_config.def_pitch_1 = pui_group:slider("  Pitch 1" .. ds, -89, 89, 0, true, "°", 1)
     def_config.def_pitch_2 = pui_group:slider("  Pitch 2" .. ds, -89, 89, 0, true, "°", 1)
     def_config.def_pitch_speed = pui_group:slider("  Pitch Speed" .. ds, -75, 75, 20, true, "", 0.1)
+    def_config.def_pitch_jitter_min = pui_group:slider("  Pitch Jitter Min" .. ds, 1, 8, 1, true, "t")
+    def_config.def_pitch_jitter_max = pui_group:slider("  Pitch Jitter Max" .. ds, 1, 8, 3, true, "t")
 
-    def_config.def_yaw_mode = pui_group:combobox("Yaw" .. ds, {"Off", "Static", "Spin", "Sway", "Jitter", "3-Way", "Random"})
+    def_config.def_yaw_mode = pui_group:combobox("Yaw" .. ds, {"Off", "Static", "Spin", "Jitter", "Random", "3-Way", "5-Way", "L&R Random"})
     def_config.def_yaw_offset = pui_group:slider("  Yaw Offset" .. ds, -180, 180, 0, true, "°", 1)
     def_config.def_yaw_left = pui_group:slider("  Yaw Left" .. ds, -180, 180, 0, true, "°", 1)
     def_config.def_yaw_right = pui_group:slider("  Yaw Right" .. ds, -180, 180, 0, true, "°", 1)
@@ -1020,6 +1021,13 @@ for _, state_name in ipairs(state_list) do
     def_config.def_3way_angle2 = pui_group:slider("  3-Way 2" .. ds, -180, 180, 0, true, "°", 1)
     def_config.def_3way_angle3 = pui_group:slider("  3-Way 3" .. ds, -180, 180, 60, true, "°", 1)
     def_config.def_3way_delay = pui_group:slider("  3-Way Delay" .. ds, 1, 8, 2, true, "t")
+    
+    def_config.def_5way_angle1 = pui_group:slider("  5-Way 1" .. ds, -180, 180, -90, true, "°", 1)
+    def_config.def_5way_angle2 = pui_group:slider("  5-Way 2" .. ds, -180, 180, -45, true, "°", 1)
+    def_config.def_5way_angle3 = pui_group:slider("  5-Way 3" .. ds, -180, 180, 0, true, "°", 1)
+    def_config.def_5way_angle4 = pui_group:slider("  5-Way 4" .. ds, -180, 180, 45, true, "°", 1)
+    def_config.def_5way_angle5 = pui_group:slider("  5-Way 5" .. ds, -180, 180, 90, true, "°", 1)
+    def_config.def_5way_delay = pui_group:slider("  5-Way Delay" .. ds, 1, 8, 2, true, "t")
 end
 
 menu.configs_da = pui.setup(menu)
@@ -1412,6 +1420,8 @@ local function hide_all()
                 if def_config.def_pitch_1 then def_config.def_pitch_1:set_visible(false) end
                 if def_config.def_pitch_2 then def_config.def_pitch_2:set_visible(false) end
                 if def_config.def_pitch_speed then def_config.def_pitch_speed:set_visible(false) end
+                if def_config.def_pitch_jitter_min then def_config.def_pitch_jitter_min:set_visible(false) end
+                if def_config.def_pitch_jitter_max then def_config.def_pitch_jitter_max:set_visible(false) end
                 if def_config.def_yaw_mode then def_config.def_yaw_mode:set_visible(false) end
                 if def_config.def_yaw_offset then def_config.def_yaw_offset:set_visible(false) end
                 if def_config.def_yaw_left then def_config.def_yaw_left:set_visible(false) end
@@ -1423,6 +1433,12 @@ local function hide_all()
                 if def_config.def_3way_angle2 then def_config.def_3way_angle2:set_visible(false) end
                 if def_config.def_3way_angle3 then def_config.def_3way_angle3:set_visible(false) end
                 if def_config.def_3way_delay then def_config.def_3way_delay:set_visible(false) end
+                if def_config.def_5way_angle1 then def_config.def_5way_angle1:set_visible(false) end
+                if def_config.def_5way_angle2 then def_config.def_5way_angle2:set_visible(false) end
+                if def_config.def_5way_angle3 then def_config.def_5way_angle3:set_visible(false) end
+                if def_config.def_5way_angle4 then def_config.def_5way_angle4:set_visible(false) end
+                if def_config.def_5way_angle5 then def_config.def_5way_angle5:set_visible(false) end
+                if def_config.def_5way_delay then def_config.def_5way_delay:set_visible(false) end
             end
         end
     end
@@ -1588,8 +1604,12 @@ show_tab = function(tab_name)
                             if pitch_mode ~= "Static" then
                                 def_config.def_pitch_2:set_visible(true)
                             end
-                            if pitch_mode == "Sway" then
+                            if pitch_mode == "Wave" then
                                 def_config.def_pitch_speed:set_visible(true)
+                            end
+                            if pitch_mode == "Jitter" then
+                                def_config.def_pitch_jitter_min:set_visible(true)
+                                def_config.def_pitch_jitter_max:set_visible(true)
                             end
                         end
 
@@ -1599,11 +1619,11 @@ show_tab = function(tab_name)
                             if yaw_mode == "Static" or yaw_mode == "Spin" or yaw_mode == "Random" then
                                 def_config.def_yaw_offset:set_visible(true)
                             end
-                            if yaw_mode == "Sway" or yaw_mode == "Jitter" then
+                            if yaw_mode == "Jitter" or yaw_mode == "L&R Random" then
                                 def_config.def_yaw_left:set_visible(true)
                                 def_config.def_yaw_right:set_visible(true)
                             end
-                            if yaw_mode == "Spin" or yaw_mode == "Sway" then
+                            if yaw_mode == "Spin" then
                                 def_config.def_yaw_speed:set_visible(true)
                             end
                             if yaw_mode == "Jitter" then
@@ -1615,6 +1635,14 @@ show_tab = function(tab_name)
                                 def_config.def_3way_angle2:set_visible(true)
                                 def_config.def_3way_angle3:set_visible(true)
                                 def_config.def_3way_delay:set_visible(true)
+                            end
+                            if yaw_mode == "5-Way" then
+                                def_config.def_5way_angle1:set_visible(true)
+                                def_config.def_5way_angle2:set_visible(true)
+                                def_config.def_5way_angle3:set_visible(true)
+                                def_config.def_5way_angle4:set_visible(true)
+                                def_config.def_5way_angle5:set_visible(true)
+                                def_config.def_5way_delay:set_visible(true)
                             end
                         end
                     end
@@ -3134,38 +3162,189 @@ local function calc_yaw_offset(vals)
             if timing_variance > 0 then
                     if not state.lr_chaos then
                         state.lr_chaos = {
-                            smooth_factor = 0,
-                            spike_cooldown = 0,
+                            -- 核心混沌系统
+                            lorenz_x = 0.1, lorenz_y = 0.1, lorenz_z = 0.1,
+                            rossler = {x = 0.1, y = 0.1, z = 0.1},
+                            henon = {x = 0.1, y = 0.1},
+                            logistic_x = 0.5,
+                            tent_x = 0.5,
+                            
+                            -- 量子态模拟
+                            quantum_superposition = {},
+                            quantum_entangle = {},
+                            quantum_decoherence = 0,
+                            quantum_collapse_tick = 0,
+                            quantum_phase = 0,
+                            quantum_state = 0,
+                            
+                            -- 神经网络反预测
+                            neural_layers = {{}, {}},
+                            neural_weights_l1 = {},
+                            neural_weights_l2 = {},
+                            neural_weights = {},
+                            neural_bias = 0,
+                            learning_rate = 0.08,
+                            adaptive_learning_rate = 0.08,
+                            prediction_history = {},
+                            prediction_error = 0,
+                            
+                            -- 时间序列分析
+                            time_series = {},
+                            autocorr_buffer = {},
+                            fft_samples = {},
+                            spectral_entropy = 1.0,
+                            
+                            -- 模式检测器
+                            pattern_detector = {
+                                history = {},
+                                variance_history = {},
+                                entropy_history = {},
+                                detected = false,
+                                detection_count = 0,
+                                last_break = 0
+                            },
+                            
+                            -- 自适应系统
                             adaptive_velocity = 0,
-                            lorenz_x = 0.1,
-                            lorenz_y = 0.1,
-                            lorenz_z = 0.1,
-                            phase = 0,
+                            adaptive_scale = 1.0,
+                            adaptive_momentum = 0,
+                            
+                            -- 熵池系统
+                            entropy_pool = {},
+                            entropy_idx = 1,
+                            entropy_mixing_state = 0,
+                            
+                            -- 频率跳变
+                            frequency_hopper = 1,
+                            frequency_table = {1, 2, 3, 5, 7, 11, 13, 17},
+                            frequency_phase = 0,
+                            
+                            -- Markov链
+                            markov_state = 1,
+                            markov_history = {},
+                            
+                            -- 分形系统
+                            fractal_octaves = {0, 0, 0, 0, 0},
+                            fractal_persistence = 0.5,
+                            
+                            -- 布朗运动
+                            brownian_x = 0,
+                            brownian_v = 0,
+                            brownian_drift = 0,
+                            
+                            -- 爆发系统
                             burst_active = false,
                             burst_cooldown = 0,
-                            pattern_history = {},
-                            last_delay = 0
+                            burst_intensity = 0,
+                            
+                            -- 尖峰系统
+                            spike_cooldown = 0,
+                            spike_magnitude = 0,
+                            
+                            -- 紧急模式
+                            emergency_mode = false,
+                            emergency_ticks = 0,
+                            emergency_level = 0,
+                            
+                            -- 反ML系统
+                            anti_ml_deception = {
+                                active = false,
+                                fake_pattern = {},
+                                real_hidden = false,
+                                duration = 0
+                            },
+                            
+                            -- 交叉耦合
+                            cross_coupling = 0,
+                            coupling_strength = 0.15,
+                            
+                            -- 相位系统
+                            phase = 0,
+                            phase_velocity = 1.0,
+                            
+                            -- 微观抖动
+                            micro_jitter = 0,
+                            
+                            -- 混沌健康度
+                            chaos_health = 1.0,
+                            health_check_tick = 0,
+                            
+                            -- 混沌累加器
+                            chaos_accumulator = 0,
+                            
+                            -- 记忆系统
+                            last_delay = 0,
+                            delay_history = {},
+                            
+                            -- 平滑因子
+                            smooth_factor = 0,
+                            
+                            -- 随机跳跃
+                            random_jump_cooldown = 0,
+                            
+                            -- 双吸引子
+                            dual_attractor = {
+                                x1 = 0.1, y1 = 0.1, z1 = 0.1,
+                                x2 = -0.1, y2 = -0.1, z2 = -0.1,
+                                coupling = 0.3,
+                                coupling_mode = 1,
+                                coupling_phase = 0
+                            }
                         }
+                        -- 初始化量子态
+                        for i = 1, 5 do
+                            state.lr_chaos.quantum_superposition[i] = enhanced_random(-100, 100, "timing") / 100
+                            state.lr_chaos.quantum_entangle[i] = {
+                                a = enhanced_random(-100, 100, "timing") / 100,
+                                b = enhanced_random(-100, 100, "timing") / 100,
+                                phase = enhanced_random(0, 360, "timing")
+                            }
+                        end
+                        -- 初始化神经网络
+                        for i = 1, 8 do
+                            state.lr_chaos.neural_weights_l1[i] = enhanced_random(-80, 80, "timing") / 100
+                            state.lr_chaos.neural_weights_l2[i] = enhanced_random(-80, 80, "timing") / 100
+                        end
+                        -- 初始化熵池
+                        for i = 1, 16 do
+                            state.lr_chaos.entropy_pool[i] = inject_true_entropy() % 1000 / 1000
+                        end
                     end
                     local chaos = state.lr_chaos
                     local chaos_entropy = inject_true_entropy() % 100
                     local variance_mult = 1.0
                     local extra_chaos = 0
                     
+                    -- 紧急模式检测
+                    if chaos.emergency_mode then
+                        chaos.emergency_ticks = chaos.emergency_ticks - 1
+                        if chaos.emergency_ticks <= 0 then
+                            chaos.emergency_mode = false
+                        else
+                            variance_mult = variance_mult * 2.5
+                            extra_chaos = extra_chaos + enhanced_random(-timing_variance * 3, timing_variance * 3, "timing")
+                        end
+                    end
+                    
+                    -- 平滑因子增强
                     chaos.smooth_factor = chaos.smooth_factor + enhanced_random(-30, 30, "timing") / 100
                     chaos.smooth_factor = math.max(-1, math.min(1, chaos.smooth_factor))
                     local smooth_contrib = math.abs(chaos.smooth_factor) * 0.3
                     
+                    -- 尖峰系统增强
                     if chaos.spike_cooldown > 0 then
                         chaos.spike_cooldown = chaos.spike_cooldown - 1
                     elseif chaos_entropy < 12 then
                         chaos.spike_cooldown = enhanced_random(8, 20, "timing")
                         extra_chaos = enhanced_random(timing_variance, timing_variance * 2, "timing")
                         if chaos_entropy < 6 then
-                            variance_mult = 0.3  
+                            variance_mult = 0.3
+                            chaos.emergency_mode = true
+                            chaos.emergency_ticks = enhanced_random(5, 10, "timing")
                         end
                     end
                     
+                    -- 速度自适应增强
                     local me = entity.get_local_player()
                     if me then
                         local vx, vy = entity.get_prop(me, "m_vecVelocity")
@@ -3173,9 +3352,9 @@ local function calc_yaw_offset(vals)
                             local velocity = math.sqrt(vx * vx + vy * vy)
                             chaos.adaptive_velocity = chaos.adaptive_velocity * 0.9 + velocity * 0.1
                             if chaos.adaptive_velocity > 200 then
-                                variance_mult = variance_mult * 0.7  
+                                variance_mult = variance_mult * 0.7
                             elseif chaos.adaptive_velocity < 10 then
-                                variance_mult = variance_mult * 1.3  
+                                variance_mult = variance_mult * 1.3
                                 if chaos_entropy < 15 then
                                     extra_chaos = extra_chaos + enhanced_random(0, timing_variance * 0.5, "timing")
                                 end
@@ -3183,6 +3362,7 @@ local function calc_yaw_offset(vals)
                         end
                     end
                     
+                    -- Lorenz吸引子
                     local sigma, rho, beta = 10, 28, 2.667
                     local dt = 0.02
                     local dx = sigma * (chaos.lorenz_y - chaos.lorenz_x) * dt
@@ -3191,11 +3371,156 @@ local function calc_yaw_offset(vals)
                     chaos.lorenz_x = math.max(-30, math.min(30, chaos.lorenz_x + dx))
                     chaos.lorenz_y = math.max(-30, math.min(30, chaos.lorenz_y + dy))
                     chaos.lorenz_z = math.max(0, math.min(50, chaos.lorenz_z + dz))
-                    local lorenz_contrib = (chaos.lorenz_x + chaos.lorenz_y) * 0.02
+                    local C1 = (chaos.lorenz_x + chaos.lorenz_y) * 0.02
                     
+                    -- Rossler吸引子
+                    chaos.rossler.x = math.max(-25, math.min(25, chaos.rossler.x + (-chaos.rossler.y - chaos.rossler.z) * 0.04))
+                    chaos.rossler.y = math.max(-25, math.min(25, chaos.rossler.y + (chaos.rossler.x + 0.2 * chaos.rossler.y) * 0.04))
+                    chaos.rossler.z = math.max(0, math.min(35, chaos.rossler.z + (0.2 + chaos.rossler.z * (chaos.rossler.x - 5.7)) * 0.04))
+                    local C2 = chaos.rossler.x * 0.035
+                    
+                    -- Henon映射
+                    local hx_new = 1 - 1.4 * chaos.henon.x * chaos.henon.x + chaos.henon.y
+                    chaos.henon.y = 0.3 * chaos.henon.x
+                    chaos.henon.x = math.max(-1.5, math.min(1.5, hx_new))
+                    local C3 = chaos.henon.x * 0.35
+                    
+                    -- Logistic映射
+                    chaos.logistic_x = math.max(0.001, math.min(0.999, 3.9 * chaos.logistic_x * (1 - chaos.logistic_x)))
+                    local C4 = (chaos.logistic_x - 0.5) * 0.5
+                    
+                    -- 量子态模拟
+                    chaos.quantum_phase = (chaos.quantum_phase + 8.7) % 360
+                    chaos.quantum_state = math.cos(math.rad(chaos.quantum_phase)) * 0.3
+                    local C5 = chaos.quantum_state
+                    
+                    -- Markov链
+                    local transitions = {{0.6, 0.25, 0.1, 0.05}, {0.15, 0.55, 0.2, 0.1}, {0.1, 0.2, 0.5, 0.2}, {0.15, 0.15, 0.2, 0.5}}
+                    local rand = enhanced_random(1, 100, "timing") / 100
+                    local cumsum = 0
+                    for i = 1, 4 do
+                        cumsum = cumsum + transitions[chaos.markov_state][i]
+                        if rand <= cumsum then chaos.markov_state = i break end
+                    end
+                    local markov_outputs = {-0.8, 0.8, -0.4, 0.4}
+                    local C6 = markov_outputs[chaos.markov_state]
+                    
+                    -- 神经网络反预测
+                    local nn_input = {C1, C2, C3, C4, C5, C6}
+                    local nn_output = chaos.neural_bias
+                    for i = 1, math.min(#nn_input, #chaos.neural_weights) do
+                        nn_output = nn_output + chaos.neural_weights[i] * nn_input[i]
+                    end
+                    nn_output = math.tanh(nn_output)
+                    local target = enhanced_random(-100, 100, "timing") / 100
+                    chaos.prediction_error = target - nn_output
+                    for i = 1, #chaos.neural_weights do
+                        if nn_input[i] then
+                            chaos.neural_weights[i] = math.max(-1.5, math.min(1.5, 
+                                chaos.neural_weights[i] + chaos.adaptive_learning_rate * chaos.prediction_error * nn_input[i]))
+                        end
+                    end
+                    local C7 = chaos.prediction_error * 0.6
+                    
+                    -- 分形噪声
+                    local fractal_val = 0
+                    local amplitude = 1.0
+                    local frequency = 1.0
+                    for i = 1, 4 do
+                        chaos.fractal_octaves[i] = (chaos.fractal_octaves[i] + math.sin(globals.curtime() * frequency * 2.3) * 0.1) % 1.0
+                        fractal_val = fractal_val + math.sin(chaos.fractal_octaves[i] * math.pi * 2) * amplitude
+                        amplitude = amplitude * 0.5
+                        frequency = frequency * 2.0
+                    end
+                    local C8 = fractal_val * 0.25
+                    
+                    -- 布朗运动
+                    chaos.brownian_v = chaos.brownian_v * 0.85 + enhanced_random(-100, 100, "timing") / 100 * 0.3
+                    chaos.brownian_x = math.max(-timing_variance, math.min(timing_variance, (chaos.brownian_x + chaos.brownian_v) * 0.95))
+                    local C9 = chaos.brownian_x * 0.3
+                    
+                    -- 熵池混合
+                    chaos.entropy_idx = (chaos.entropy_idx % 8) + 1
+                    chaos.entropy_pool[chaos.entropy_idx] = (chaos.entropy_pool[chaos.entropy_idx] + inject_true_entropy() % 100 / 100) % 1.0
+                    local entropy_mix = 0
+                    for i = 1, 8 do
+                        entropy_mix = entropy_mix + chaos.entropy_pool[i] * math.sin(i * 0.5)
+                    end
+                    local C10 = (entropy_mix / 8 - 0.5) * 0.8
+                    
+                    -- 频率跳变
+                    if globals.tickcount() % chaos.frequency_table[chaos.frequency_hopper] == 0 then
+                        chaos.frequency_hopper = (chaos.frequency_hopper % #chaos.frequency_table) + 1
+                        extra_chaos = extra_chaos + enhanced_random(-timing_variance, timing_variance, "timing") * 0.5
+                    end
+                    
+                    -- 双吸引子系统增强 (交叉耦合)
+                    if not chaos.dual_attractor then
+                        chaos.dual_attractor = {
+                            x1 = 0.1, y1 = 0.1, z1 = 0.1,
+                            x2 = -0.1, y2 = -0.1, z2 = -0.1,
+                            coupling = 0.3,
+                            coupling_mode = 1,
+                            coupling_phase = 0
+                        }
+                    end
+                    local da = chaos.dual_attractor
+                    local dt_da = 0.015
+                    
+                    -- 动态耦合强度
+                    da.coupling_phase = (da.coupling_phase + 1) % 100
+                    if da.coupling_phase == 0 then
+                        da.coupling_mode = (inject_true_entropy() % 4) + 1
+                        da.coupling = 0.2 + (inject_true_entropy() % 40) / 100
+                    end
+                    
+                    -- 吸引子1 (Lorenz型)
+                    local coupling1 = 0
+                    if da.coupling_mode == 1 then
+                        coupling1 = da.coupling * (da.x2 - da.x1)
+                    elseif da.coupling_mode == 2 then
+                        coupling1 = da.coupling * (da.y2 * da.z2 - da.y1 * da.z1)
+                    elseif da.coupling_mode == 3 then
+                        coupling1 = da.coupling * math.sin((da.x2 - da.x1) * 0.5)
+                    else
+                        coupling1 = da.coupling * (da.x2 - da.x1 + da.y2 - da.y1) * 0.5
+                    end
+                    
+                    local dx1 = (10 * (da.y1 - da.x1) + coupling1) * dt_da
+                    local dy1 = (da.x1 * (28 - da.z1) - da.y1) * dt_da
+                    local dz1 = (da.x1 * da.y1 - 2.667 * da.z1) * dt_da
+                    
+                    -- 吸引子2 (Rossler型)
+                    local coupling2 = 0
+                    if da.coupling_mode == 1 then
+                        coupling2 = da.coupling * (da.x1 - da.x2)
+                    elseif da.coupling_mode == 2 then
+                        coupling2 = da.coupling * (da.y1 * da.z1 - da.y2 * da.z2)
+                    elseif da.coupling_mode == 3 then
+                        coupling2 = da.coupling * math.cos((da.x1 - da.x2) * 0.5)
+                    else
+                        coupling2 = da.coupling * (da.x1 - da.x2 + da.y1 - da.y2) * 0.5
+                    end
+                    
+                    local dx2 = (-da.y2 - da.z2 + coupling2) * dt_da * 2
+                    local dy2 = (da.x2 + 0.2 * da.y2) * dt_da * 2
+                    local dz2 = (0.2 + da.z2 * (da.x2 - 5.7)) * dt_da * 2
+                    
+                    da.x1 = math.max(-50, math.min(50, da.x1 + dx1))
+                    da.y1 = math.max(-50, math.min(50, da.y1 + dy1))
+                    da.z1 = math.max(0, math.min(50, da.z1 + dz1))
+                    da.x2 = math.max(-50, math.min(50, da.x2 + dx2))
+                    da.y2 = math.max(-50, math.min(50, da.y2 + dy2))
+                    da.z2 = math.max(0, math.min(50, da.z2 + dz2))
+                    
+                    -- 交叉耦合贡献
+                    local C_DUAL = ((da.x1 - da.x2) * 0.02 + (da.y1 - da.y2) * 0.015 + math.sin((da.z1 - da.z2) * 0.1) * 0.5) * timing_variance * 0.03
+                    
+                    -- 相位贡献
                     chaos.phase = (chaos.phase + enhanced_random(10, 30, "timing")) % 360
                     local phase_contrib = math.sin(math.rad(chaos.phase)) * 0.2
                     
+                    -- 爆发系统
                     if chaos.burst_cooldown > 0 then
                         chaos.burst_cooldown = chaos.burst_cooldown - 1
                         if chaos.burst_active then
@@ -3209,30 +3534,259 @@ local function calc_yaw_offset(vals)
                         chaos.burst_active = false
                     end
                     
-                    table.insert(chaos.pattern_history, state.lr_current_delay or base_delay)
-                    if #chaos.pattern_history > 8 then table.remove(chaos.pattern_history, 1) end
-                    if #chaos.pattern_history >= 4 then
-                        local similar_count = 0
-                        for i = #chaos.pattern_history, #chaos.pattern_history - 2, -1 do
-                            if i > 1 and math.abs(chaos.pattern_history[i] - chaos.pattern_history[i-1]) < 1 then
-                                similar_count = similar_count + 1
-                            end
+                    -- 时间序列反预测
+                    table.insert(chaos.time_series, C1 + C3 + C5)
+                    if #chaos.time_series > 12 then table.remove(chaos.time_series, 1) end
+                    if #chaos.time_series >= 6 then
+                        local predicted = 0
+                        for i = 1, math.min(3, #chaos.time_series - 1) do
+                            predicted = predicted + chaos.time_series[#chaos.time_series - i] * (0.4 / i)
                         end
-                        if similar_count >= 2 then
+                        local pred_error = math.abs(predicted - chaos.time_series[#chaos.time_series])
+                        if pred_error < timing_variance * 0.2 then
                             extra_chaos = extra_chaos + enhanced_random(-timing_variance * 2, timing_variance * 2, "timing")
-                            chaos.pattern_history = {}
+                            chaos.time_series = {}
                         end
                     end
                     
-                    local total_chaos_mult = 1.0 + smooth_contrib + lorenz_contrib + phase_contrib
-                    total_chaos_mult = total_chaos_mult * variance_mult
-                    total_chaos_mult = math.max(0.3, math.min(2.5, total_chaos_mult))
+                    -- 增强模式检测与反制系统
+                    local pd = chaos.pattern_detector
+                    table.insert(pd.history, state.lr_current_delay or base_delay)
+                    if #pd.history > 16 then table.remove(pd.history, 1) end
                     
+                    pd.detected = false
+                    local detection_score = 0
+                    
+                    if #pd.history >= 8 then
+                        -- 1. 方差检测
+                        local mean = 0
+                        for _, v in ipairs(pd.history) do mean = mean + v end
+                        mean = mean / #pd.history
+                        local variance = 0
+                        for _, v in ipairs(pd.history) do variance = variance + (v - mean) ^ 2 end
+                        variance = variance / #pd.history
+                        if variance < timing_variance * 0.15 then detection_score = detection_score + 1 end
+                        
+                        -- 2. 多重自相关检测 (检测周期性)
+                        local max_autocorr = 0
+                        for lag = 2, math.min(6, #pd.history - 2) do
+                            local corr = 0
+                            local count = 0
+                            for i = lag + 1, #pd.history do
+                                corr = corr + (pd.history[i] - mean) * (pd.history[i - lag] - mean)
+                                count = count + 1
+                            end
+                            if count > 0 and variance > 0 then
+                                corr = math.abs(corr / (count * variance))
+                                max_autocorr = math.max(max_autocorr, corr)
+                            end
+                        end
+                        if max_autocorr > 0.6 then detection_score = detection_score + 2 end
+                        
+                        -- 3. FFT频谱分析 (检测频率模式)
+                        if #pd.history >= 8 then
+                            local fft_power = 0
+                            for freq = 1, 4 do
+                                local real_part = 0
+                                local imag_part = 0
+                                for i = 1, #pd.history do
+                                    local angle = 2 * math.pi * freq * i / #pd.history
+                                    real_part = real_part + pd.history[i] * math.cos(angle)
+                                    imag_part = imag_part + pd.history[i] * math.sin(angle)
+                                end
+                                fft_power = fft_power + math.sqrt(real_part * real_part + imag_part * imag_part)
+                            end
+                            if fft_power > timing_variance * 4 then detection_score = detection_score + 2 end
+                        end
+                        
+                        -- 4. 熵检测 (低熵=可预测)
+                        local bins = {0, 0, 0, 0, 0}
+                        local bin_width = timing_variance * 0.8
+                        for _, val in ipairs(pd.history) do
+                            local bin_idx = math.min(5, math.max(1, math.floor((val - base_delay + timing_variance * 2) / bin_width) + 1))
+                            bins[bin_idx] = bins[bin_idx] + 1
+                        end
+                        local entropy = 0
+                        for _, count in ipairs(bins) do
+                            if count > 0 then
+                                local p = count / #pd.history
+                                entropy = entropy - p * math.log(p)
+                            end
+                        end
+                        if entropy < 1.0 then detection_score = detection_score + 1 end
+                        
+                        -- 5. 趋势检测 (检测线性模式)
+                        local diffs = {}
+                        for i = 2, math.min(8, #pd.history) do
+                            diffs[#diffs + 1] = pd.history[#pd.history - i + 1] - pd.history[#pd.history - i]
+                        end
+                        if #diffs >= 4 then
+                            local diff_mean = 0
+                            for _, d in ipairs(diffs) do diff_mean = diff_mean + d end
+                            diff_mean = diff_mean / #diffs
+                            local diff_var = 0
+                            for _, d in ipairs(diffs) do diff_var = diff_var + (d - diff_mean) ^ 2 end
+                            diff_var = diff_var / #diffs
+                            if diff_var < timing_variance * 0.08 then detection_score = detection_score + 1 end
+                        end
+                        
+                        -- 综合判定
+                        pd.detected = detection_score >= 3
+                        
+                        if pd.detected then
+                            pd.detection_count = pd.detection_count + 1
+                            if pd.detection_count >= 2 then
+                                -- 触发紧急反制模式
+                                pd.detection_count = 0
+                                pd.history = {}
+                                chaos.emergency_mode = true
+                                chaos.emergency_level = math.min(5, chaos.emergency_level + 1)
+                                chaos.emergency_ticks = enhanced_random(10, 20, "timing")
+                                
+                                -- 极端混沌注入
+                                extra_chaos = extra_chaos + enhanced_random(-timing_variance * 4, timing_variance * 4, "timing")
+                                
+                                -- 完全重置所有混沌系统
+                                chaos.lorenz_x = enhanced_random(-20, 20, "timing")
+                                chaos.lorenz_y = enhanced_random(-20, 20, "timing")
+                                chaos.lorenz_z = enhanced_random(0, 40, "timing")
+                                chaos.rossler.x = enhanced_random(-15, 15, "timing")
+                                chaos.rossler.y = enhanced_random(-15, 15, "timing")
+                                chaos.rossler.z = enhanced_random(0, 25, "timing")
+                                chaos.henon.x = enhanced_random(-1, 1, "timing") / 2
+                                chaos.henon.y = enhanced_random(-1, 1, "timing") / 2
+                                chaos.logistic_x = enhanced_random(20, 80, "timing") / 100
+                                
+                                -- 激活反ML欺骗模式
+                                if not chaos.anti_ml_deception then
+                                    chaos.anti_ml_deception = {
+                                        active = false,
+                                        fake_pattern = {},
+                                        real_hidden = false,
+                                        duration = 0
+                                    }
+                                end
+                                chaos.anti_ml_deception.active = true
+                                chaos.anti_ml_deception.duration = enhanced_random(8, 16, "timing")
+                                
+                                -- 生成假模式
+                                local fake_type = inject_true_entropy() % 4
+                                chaos.anti_ml_deception.fake_pattern = {}
+                                if fake_type == 0 then
+                                    -- 假周期模式
+                                    local fake_period = enhanced_random(2, 5, "timing")
+                                    for i = 1, 10 do
+                                        chaos.anti_ml_deception.fake_pattern[i] = base_delay + math.sin(i * 2 * math.pi / fake_period) * timing_variance * 0.5
+                                    end
+                                elseif fake_type == 1 then
+                                    -- 假线性趋势
+                                    local fake_slope = enhanced_random(-timing_variance, timing_variance, "timing") / 10
+                                    for i = 1, 10 do
+                                        chaos.anti_ml_deception.fake_pattern[i] = base_delay + fake_slope * i
+                                    end
+                                elseif fake_type == 2 then
+                                    -- 假恒定值
+                                    local fake_const = base_delay + enhanced_random(-timing_variance, timing_variance, "timing")
+                                    for i = 1, 10 do
+                                        chaos.anti_ml_deception.fake_pattern[i] = fake_const + enhanced_random(-2, 2, "timing")
+                                    end
+                                else
+                                    -- 假交替模式
+                                    local val1 = base_delay + enhanced_random(-timing_variance, 0, "timing")
+                                    local val2 = base_delay + enhanced_random(0, timing_variance, "timing")
+                                    for i = 1, 10 do
+                                        chaos.anti_ml_deception.fake_pattern[i] = (i % 2 == 0) and val1 or val2
+                                    end
+                                end
+                            end
+                        else
+                            pd.detection_count = math.max(0, pd.detection_count - 1)
+                        end
+                    end
+                    
+                    -- 微抖动
+                    chaos.micro_jitter = chaos.micro_jitter * 0.6 + enhanced_random(-3, 3, "timing") * 0.4
+                    
+                    -- 随机跳跃系统 (完全打破时序模式)
+                    if not chaos.random_jump_cooldown then chaos.random_jump_cooldown = 0 end
+                    local jump_contrib = 0
+                    if chaos.random_jump_cooldown > 0 then
+                        chaos.random_jump_cooldown = chaos.random_jump_cooldown - 1
+                    elseif inject_true_entropy() % 100 < 12 then
+                        -- 触发随机跳跃
+                        chaos.random_jump_cooldown = enhanced_random(6, 15, "timing")
+                        local jump_type = inject_true_entropy() % 5
+                        if jump_type == 0 then
+                            -- 极端跳跃
+                            jump_contrib = enhanced_random(-timing_variance * 3, timing_variance * 3, "timing")
+                        elseif jump_type == 1 then
+                            -- 反向跳跃
+                            jump_contrib = -(chaos.last_delay or base_delay) + base_delay + enhanced_random(-timing_variance, timing_variance, "timing")
+                        elseif jump_type == 2 then
+                            -- 量子跳跃 (使用量子态)
+                            local q_idx = (inject_true_entropy() % 5) + 1
+                            jump_contrib = chaos.quantum_superposition[q_idx] * timing_variance * 2
+                        elseif jump_type == 3 then
+                            -- 零跳跃 (回到基准)
+                            jump_contrib = -chaos.chaos_accumulator * 0.8
+                        else
+                            -- 混沌跳跃 (使用多个吸引子)
+                            jump_contrib = (chaos.lorenz_x * 0.1 + chaos.rossler.x * 0.15 + chaos.henon.x * timing_variance * 0.5)
+                        end
+                        extra_chaos = extra_chaos + jump_contrib
+                    end
+                    
+                    -- 反ML欺骗模式应用
+                    if chaos.anti_ml_deception and chaos.anti_ml_deception.active then
+                        chaos.anti_ml_deception.duration = chaos.anti_ml_deception.duration - 1
+                        if chaos.anti_ml_deception.duration <= 0 then
+                            chaos.anti_ml_deception.active = false
+                        else
+                            -- 注入假模式数据
+                            local fake_idx = (globals.tickcount() % #chaos.anti_ml_deception.fake_pattern) + 1
+                            local fake_influence = chaos.anti_ml_deception.fake_pattern[fake_idx] - base_delay
+                            -- 混合真实混沌和假模式 (让resolver学习到错误模式)
+                            extra_chaos = extra_chaos * 0.4 + fake_influence * 0.6
+                        end
+                    end
+                    
+                    -- 交叉耦合增强
+                    chaos.cross_coupling = (C1 * C2 + C3 * C4 - C5 * C6) * 0.15 + C_DUAL
+                    
+                    -- 混沌累加器 (包含所有混沌源)
+                    chaos.chaos_accumulator = C1 + C2 + C3 + C4 + C5 + C6 + C7 + C8 + C9 + C10 + 
+                                             chaos.cross_coupling + chaos.micro_jitter + jump_contrib
+                    
+                    -- 紧急模式额外增强
+                    if chaos.emergency_mode then
+                        local emergency_boost = enhanced_random(-timing_variance * chaos.emergency_level, 
+                                                               timing_variance * chaos.emergency_level, "timing")
+                        chaos.chaos_accumulator = chaos.chaos_accumulator + emergency_boost
+                    end
+                    
+                    -- 总混沌倍数计算
+                    local total_chaos_mult = 1.0 + smooth_contrib + phase_contrib + 
+                                            math.abs(chaos.chaos_accumulator) * 0.1
+                    total_chaos_mult = total_chaos_mult * variance_mult
+                    total_chaos_mult = math.max(0.3, math.min(3.5, total_chaos_mult))
+                    
+                    -- 最终方差计算
                     local final_variance = timing_variance * total_chaos_mult
                     local random_offset = enhanced_random(-final_variance, final_variance, "timing") + extra_chaos
                     
+                    -- 真熵注入
                     local true_entropy_offset = (inject_true_entropy() % (math.floor(timing_variance * 2) + 1)) - timing_variance
                     random_offset = random_offset + true_entropy_offset * 0.3
+                    
+                    -- 混沌健康度调整
+                    if math.abs(random_offset) < timing_variance * 0.2 then
+                        chaos.chaos_health = math.max(0.5, chaos.chaos_health - 0.1)
+                        if chaos.chaos_health < 0.7 then
+                            random_offset = random_offset + enhanced_random(-timing_variance, timing_variance, "timing")
+                        end
+                    else
+                        chaos.chaos_health = math.min(1.0, chaos.chaos_health + 0.05)
+                    end
                     
                     state.lr_current_delay = math.max(1, base_delay + random_offset)
                     chaos.last_delay = state.lr_current_delay
@@ -5430,12 +5984,17 @@ end)
 defensive_system.pitch_inverted = false
 defensive_system.pitch_random_seed = 31337
 defensive_system.pitch_generated = 0
+defensive_system.pitch_jitter_cycle = 0
+defensive_system.pitch_jitter_delay = 1
+defensive_system.pitch_jitter_side = false
 defensive_system.yaw_generated = 0
 defensive_system.jitter_cycle = 0
 defensive_system.jitter_delay = 1
 defensive_system.jitter_side = false
 defensive_system.threeway_cycle = 0
 defensive_system.threeway_index = 0
+defensive_system.fiveway_cycle = 0
+defensive_system.fiveway_index = 0
 defensive_system.tick_interval = 1
 defensive_system.last_defensive_tick = 0
 defensive_system.tick_counter = 0
@@ -5511,28 +6070,240 @@ local function adaptive_chaos_random(min, max)
     local tick = globals.tickcount()
     local time = globals.realtime()
     
+    -- 多重XORShift增强
     state.chaos_seed = bit.bxor(state.chaos_seed, bit.lshift(state.chaos_seed, 13))
     state.chaos_seed = bit.bxor(state.chaos_seed, bit.rshift(state.chaos_seed, 17))
     state.chaos_seed = bit.bxor(state.chaos_seed, bit.lshift(state.chaos_seed, 5))
     state.chaos_seed = bit.bxor(state.chaos_seed, math.floor(time * 1000000) % 999983)
     state.chaos_seed = bit.bxor(state.chaos_seed, tick * 73939)
     
-    local dt = 0.01
+    -- 初始化多层混沌系统
+    if not state.multi_chaos then
+        state.multi_chaos = {
+            rossler = {x = 0.1, y = 0.1, z = 0.1},
+            chen = {x = 0.1, y = 0.1, z = 0.1},
+            duffing = {x = 0.1, v = 0},
+            henon = {x = 0.1, y = 0.1},
+            logistic = {x = 0.5, r = 3.9},
+            tent = {x = 0.5},
+            quantum = {state = 0, phase = 0, entangle = {}},
+            neural = {weights = {}, hidden = 0, learning_rate = 0.05},
+            markov = {state = 1, history = {}},
+            fractal = {octaves = {0, 0, 0, 0}, persistence = 0.5},
+            time_series = {history = {}, predictions = {}},
+            pattern_detector = {history = {}, detected = false, counter = 0},
+            anti_ml = {mode = 0, deception_active = false, fake_patterns = {}},
+            adaptive_weights = {0.15, 0.15, 0.15, 0.15, 0.1, 0.1, 0.1, 0.1}
+        }
+        for i = 1, 5 do
+            state.multi_chaos.quantum.entangle[i] = {a = 0, b = 0, phase = 0}
+        end
+        for i = 1, 8 do
+            state.multi_chaos.neural.weights[i] = (math.random() - 0.5) * 2
+        end
+    end
+    
+    local mc = state.multi_chaos
+    
+    -- Lorenz增强版
+    local dt = 0.012
     local dx = 10 * (state.lorenz.y - state.lorenz.x) * dt
     local dy = (state.lorenz.x * (28 - state.lorenz.z) - state.lorenz.y) * dt
     local dz = (state.lorenz.x * state.lorenz.y - 2.667 * state.lorenz.z) * dt
     state.lorenz.x = math.max(-50, math.min(50, state.lorenz.x + dx))
     state.lorenz.y = math.max(-50, math.min(50, state.lorenz.y + dy))
     state.lorenz.z = math.max(0, math.min(50, state.lorenz.z + dz))
-    local lorenz_contrib = (state.lorenz.x + state.lorenz.y) * 0.02
+    local C1 = (state.lorenz.x + state.lorenz.y) * 0.02
     
-    local combined = lorenz_contrib
+    -- Rossler吸引子
+    mc.rossler.x = math.max(-25, math.min(25, mc.rossler.x + (-mc.rossler.y - mc.rossler.z) * 0.04))
+    mc.rossler.y = math.max(-25, math.min(25, mc.rossler.y + (mc.rossler.x + 0.2 * mc.rossler.y) * 0.04))
+    mc.rossler.z = math.max(0, math.min(35, mc.rossler.z + (0.2 + mc.rossler.z * (mc.rossler.x - 5.7)) * 0.04))
+    local C2 = mc.rossler.x * 0.035
+    
+    -- Chen吸引子
+    mc.chen.x = math.max(-30, math.min(30, mc.chen.x + 35 * (mc.chen.y - mc.chen.x) * 0.008))
+    mc.chen.y = math.max(-30, math.min(30, mc.chen.y + ((28 - 35) * mc.chen.x - mc.chen.x * mc.chen.z + 28 * mc.chen.y) * 0.008))
+    mc.chen.z = math.max(0, math.min(50, mc.chen.z + (mc.chen.x * mc.chen.y - 3 * mc.chen.z) * 0.008))
+    local C3 = (mc.chen.x + mc.chen.y) * 0.025
+    
+    -- Duffing振荡器
+    mc.duffing.v = math.max(-3, math.min(3, mc.duffing.v + (0.4 * math.cos(time * 1.2) - 0.3 * mc.duffing.v - mc.duffing.x + mc.duffing.x * mc.duffing.x * mc.duffing.x) * 0.015))
+    mc.duffing.x = math.max(-2, math.min(2, mc.duffing.x + mc.duffing.v * 0.015))
+    local C4 = mc.duffing.x * 0.4
+    
+    -- Henon映射
+    local hx_new = 1 - 1.4 * mc.henon.x * mc.henon.x + mc.henon.y
+    mc.henon.y = 0.3 * mc.henon.x
+    mc.henon.x = math.max(-1.5, math.min(1.5, hx_new))
+    local C5 = mc.henon.x * 0.35
+    
+    -- Logistic映射
+    mc.logistic.x = math.max(0.001, math.min(0.999, mc.logistic.r * mc.logistic.x * (1 - mc.logistic.x)))
+    local C6 = (mc.logistic.x - 0.5) * 0.5
+    
+    -- Tent映射
+    mc.tent.x = mc.tent.x < 0.5 and 1.99 * mc.tent.x or 1.99 * (1 - mc.tent.x)
+    mc.tent.x = math.max(0.001, math.min(0.999, mc.tent.x))
+    local C7 = (mc.tent.x - 0.5) * 0.7
+    
+    -- 量子纠缠模拟
+    local qe = mc.quantum
+    for i = 1, 5 do
+        local pair = qe.entangle[i]
+        if not pair.a or pair.a == 0 then
+            pair.a = (math.random() - 0.5) * 2
+            pair.b = -pair.a * 0.95
+            pair.phase = math.random() * 360
+        end
+        pair.phase = (pair.phase + 8.7) % 360
+        local entangle_val = pair.a * math.cos(math.rad(pair.phase)) + pair.b * math.sin(math.rad(pair.phase))
+        qe.state = qe.state + entangle_val * 0.2
+    end
+    local C8 = qe.state * 0.3
+    qe.state = qe.state * 0.9
+    
+    -- 神经网络预测反制
+    local nn = mc.neural
+    local nn_input = {C1, C2, C3, C4, C5, C6, C7, C8}
+    local nn_output = 0
+    for i = 1, 8 do
+        nn_output = nn_output + nn.weights[i] * nn_input[i]
+    end
+    nn_output = math.tanh(nn_output)
+    local target = (math.random() - 0.5) * 2
+    local error = target - nn_output
+    for i = 1, 8 do
+        nn.weights[i] = math.max(-1.5, math.min(1.5, nn.weights[i] + nn.learning_rate * error * nn_input[i]))
+    end
+    local C9 = error * 0.6
+    
+    -- Markov链
+    local mk = mc.markov
+    local transitions = {{0.6, 0.25, 0.1, 0.05}, {0.15, 0.55, 0.2, 0.1}, {0.1, 0.2, 0.5, 0.2}, {0.15, 0.15, 0.2, 0.5}}
+    local rand = math.random()
+    local cumsum = 0
+    for i = 1, 4 do
+        cumsum = cumsum + transitions[mk.state][i]
+        if rand <= cumsum then
+            mk.state = i
+            break
+        end
+    end
+    local outputs = {-0.8, 0.8, -0.4, 0.4}
+    local C10 = outputs[mk.state]
+    
+    -- 分形噪声
+    local fn = mc.fractal
+    local fractal_val = 0
+    local amplitude = 1.0
+    local frequency = 1.0
+    for i = 1, 4 do
+        fn.octaves[i] = (fn.octaves[i] + math.sin(time * frequency * 2.3) * 0.1) % 1.0
+        fractal_val = fractal_val + math.sin(fn.octaves[i] * math.pi * 2) * amplitude
+        amplitude = amplitude * fn.persistence
+        frequency = frequency * 2.0
+    end
+    local C11 = fractal_val * 0.25
+    
+    -- 时间序列反预测
+    local ts = mc.time_series
+    table.insert(ts.history, C1 + C3 + C5)
+    if #ts.history > 12 then table.remove(ts.history, 1) end
+    if #ts.history >= 6 then
+        local predicted = 0
+        for i = 1, math.min(3, #ts.history - 1) do
+            predicted = predicted + ts.history[#ts.history - i] * (0.4 / i)
+        end
+        table.insert(ts.predictions, predicted)
+        if #ts.predictions > 6 then table.remove(ts.predictions, 1) end
+        if #ts.predictions >= 4 then
+            local pred_error = 0
+            for i = 1, #ts.predictions do
+                pred_error = pred_error + math.abs(ts.predictions[i] - (ts.history[i] or 0))
+            end
+            pred_error = pred_error / #ts.predictions
+            if pred_error < 0.3 then
+                ts.predictions = {}
+                local C12 = (math.random() - 0.5) * 3
+            end
+        end
+    end
+    local C12 = #ts.predictions > 0 and -ts.predictions[#ts.predictions] * 1.5 or 0
+    
+    -- 模式检测与反制
+    local pd = mc.pattern_detector
+    table.insert(pd.history, C1)
+    if #pd.history > 10 then table.remove(pd.history, 1) end
+    if #pd.history >= 6 then
+        local mean = 0
+        for _, v in ipairs(pd.history) do mean = mean + v end
+        mean = mean / #pd.history
+        local variance = 0
+        for _, v in ipairs(pd.history) do variance = variance + (v - mean) ^ 2 end
+        variance = variance / #pd.history
+        pd.detected = variance < 0.2
+        if pd.detected then
+            pd.counter = pd.counter + 1
+            if pd.counter >= 3 then
+                pd.counter = 0
+                pd.history = {}
+                state.lorenz.x = state.lorenz.x + (math.random() - 0.5) * 20
+                mc.rossler.y = mc.rossler.y + (math.random() - 0.5) * 15
+                mc.chen.z = mc.chen.z + (math.random() - 0.5) * 10
+            end
+        else
+            pd.counter = 0
+        end
+    end
+    
+    -- Anti-ML欺骗
+    local aml = mc.anti_ml
+    if math.random() < 0.08 then
+        aml.mode = (aml.mode + 1) % 5
+        aml.deception_active = true
+    end
+    local C13 = 0
+    if aml.deception_active then
+        if aml.mode == 0 then C13 = (math.random() - 0.5) * 2
+        elseif aml.mode == 1 then C13 = math.sin(time * 7.3) * 0.8
+        elseif aml.mode == 2 then C13 = -C1 * 1.2
+        elseif aml.mode == 3 then C13 = (C2 - C3) * 0.7
+        else C13 = C8 * 1.5 end
+        if math.random() < 0.15 then aml.deception_active = false end
+    end
+    
+    -- 自适应权重调整
+    local aw = mc.adaptive_weights
+    local components = {C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11, C12, C13}
+    local weighted_sum = 0
+    for i = 1, math.min(#components, #aw) do
+        weighted_sum = weighted_sum + components[i] * aw[i]
+    end
+    
+    -- 权重自适应
+    if #ts.history >= 8 then
+        local recent_var = 0
+        for i = math.max(1, #ts.history - 4), #ts.history do
+            recent_var = recent_var + math.abs(ts.history[i] - (ts.history[i-1] or 0))
+        end
+        recent_var = recent_var / 4
+        if recent_var < 0.2 then
+            for i = 1, #aw do
+                aw[i] = aw[i] + (math.random() - 0.5) * 0.05
+                aw[i] = math.max(0.05, math.min(0.3, aw[i]))
+            end
+        end
+    end
+    
+    local combined = weighted_sum
     local range = max - min + 1
     local normalized = (combined + 5) / 10
     normalized = math.max(0, math.min(1, normalized))
     
     local seed_influence = (math.abs(state.chaos_seed) % range)
-    local final_value = min + math.floor(normalized * range * 0.6 + seed_influence * 0.4)
+    local chaos_boost = pd.detected and 0.8 or 0.6
+    local final_value = min + math.floor(normalized * range * chaos_boost + seed_influence * (1 - chaos_boost))
     
     return math.max(min, math.min(max, final_value))
 end
@@ -5609,6 +6380,14 @@ local function record_defensive_result(success)
     end
 end
 
+-- 混沌健康监控系统
+local chaos_health = {
+    last_check_tick = 0,
+    stability_buffer = {},
+    entropy_level = 1.0,
+    last_entropy_boost = 0
+}
+
 local defensive_cache = {
     last_calculation_tick = 0,
     cached_result = 0,
@@ -5617,8 +6396,103 @@ local defensive_cache = {
     threat_history = {},
     performance_score = 1.0,
     last_success_tick = 0,
-    consecutive_failures = 0
+    consecutive_failures = 0,
+    chaos_injection_level = 0,
+    emergency_mode = false,
+    emergency_mode_ticks = 0,
+    pattern_buffer = {},
+    last_angles = {pitch = 0, yaw = 0},
+    angle_variance_history = {},
+    multi_threat_detected = false,
+    threat_lock_counter = 0
 }
+
+local function monitor_chaos_health()
+    local tick = globals.tickcount()
+    
+    -- 每32 ticks检查一次
+    if tick - chaos_health.last_check_tick < 32 then
+        return
+    end
+    chaos_health.last_check_tick = tick
+    
+    -- 分析最近的角度变化熵
+    if #defensive_cache.angle_variance_history >= 5 then
+        local variance_sum = 0
+        local variance_squared_sum = 0
+        
+        for _, v in ipairs(defensive_cache.angle_variance_history) do
+            variance_sum = variance_sum + v
+            variance_squared_sum = variance_squared_sum + (v * v)
+        end
+        
+        local mean = variance_sum / #defensive_cache.angle_variance_history
+        local variance = (variance_squared_sum / #defensive_cache.angle_variance_history) - (mean * mean)
+        
+        -- 计算熵级别（方差越小，熵越低，系统越可预测）
+        local entropy = math.sqrt(math.max(0, variance)) / 20  -- 归一化
+        
+        table.insert(chaos_health.stability_buffer, entropy)
+        if #chaos_health.stability_buffer > 8 then
+            table.remove(chaos_health.stability_buffer, 1)
+        end
+        
+        -- 计算平均熵
+        if #chaos_health.stability_buffer >= 5 then
+            local entropy_sum = 0
+            for _, e in ipairs(chaos_health.stability_buffer) do
+                entropy_sum = entropy_sum + e
+            end
+            chaos_health.entropy_level = entropy_sum / #chaos_health.stability_buffer
+            
+            -- 如果熵太低（系统太稳定/可预测），触发紧急混沌注入
+            if chaos_health.entropy_level < 0.3 and tick - chaos_health.last_entropy_boost > 64 then
+                defensive_cache.emergency_mode = true
+                defensive_cache.emergency_mode_ticks = adaptive_chaos_random(15, 25)
+                defensive_cache.chaos_injection_level = math.min(3, defensive_cache.chaos_injection_level + 2)
+                chaos_health.last_entropy_boost = tick
+                
+                -- 重置缓冲区
+                chaos_health.stability_buffer = {}
+                defensive_cache.angle_variance_history = {}
+                defensive_cache.pattern_buffer = {}
+                
+                -- 扰动混沌系统状态
+                local state = defensive_system.adaptive
+                if state.lorenz then
+                    state.lorenz.x = state.lorenz.x + (math.random() - 0.5) * 15
+                    state.lorenz.y = state.lorenz.y + (math.random() - 0.5) * 15
+                    state.lorenz.z = state.lorenz.z + (math.random() - 0.5) * 10
+                end
+                if state.multi_chaos then
+                    state.multi_chaos.rossler.x = state.multi_chaos.rossler.x + (math.random() - 0.5) * 10
+                    state.multi_chaos.chen.y = state.multi_chaos.chen.y + (math.random() - 0.5) * 10
+                end
+            end
+        end
+    end
+    
+    -- 分析激活模式的熵
+    if #defensive_cache.pattern_buffer >= 8 then
+        local ones = 0
+        for _, v in ipairs(defensive_cache.pattern_buffer) do
+            ones = ones + v
+        end
+        local ratio = ones / #defensive_cache.pattern_buffer
+        
+        -- 如果激活比例太极端（接近0或1），增加混沌
+        if ratio < 0.2 or ratio > 0.8 then
+            defensive_cache.chaos_injection_level = math.min(3, defensive_cache.chaos_injection_level + 1)
+        end
+    end
+    
+    -- 自然衰减混沌注入级别
+    if defensive_cache.chaos_injection_level > 0 and not defensive_cache.emergency_mode then
+        if tick % 128 == 0 then
+            defensive_cache.chaos_injection_level = math.max(0, defensive_cache.chaos_injection_level - 1)
+        end
+    end
+end
 
 local function calculate_defensive_speed(builder_state_items)
     local player_state = global_anti_prediction.player_state
@@ -5635,6 +6509,25 @@ local function calculate_defensive_speed(builder_state_items)
         calibrate_server()
     end
     
+    -- 监控混沌系统健康度
+    monitor_chaos_health()
+    
+    -- 紧急混沌模式检测
+    if defensive_cache.emergency_mode then
+        defensive_cache.emergency_mode_ticks = defensive_cache.emergency_mode_ticks - 1
+        if defensive_cache.emergency_mode_ticks <= 0 then
+            defensive_cache.emergency_mode = false
+            defensive_cache.chaos_injection_level = math.max(0, defensive_cache.chaos_injection_level - 1)
+        end
+    end
+    
+    -- 检测连续失败并触发紧急模式
+    if defensive_cache.consecutive_failures >= 2 then
+        defensive_cache.emergency_mode = true
+        defensive_cache.emergency_mode_ticks = adaptive_chaos_random(8, 16)
+        defensive_cache.chaos_injection_level = math.min(3, defensive_cache.chaos_injection_level + 1)
+    end
+    
     local final_tick_delay = 0
     
     if tick_mode == "Adaptive" then
@@ -5648,67 +6541,144 @@ local function calculate_defensive_speed(builder_state_items)
             base_delay = 7  
         end
         
+        -- 紧急模式下增加基础延迟随机性
+        if defensive_cache.emergency_mode then
+            base_delay = base_delay + adaptive_chaos_random(-2, 3)
+        end
+        
         local velocity_mod = 0
         local threat_mod = 0
         local ping_mod = 0
+        local chaos_mod = 0
         
         if me then
             local vx, vy, vz = entity.get_prop(me, "m_vecVelocity")
             local velocity = vx and math.sqrt(vx*vx + vy*vy) or 0
             
             table.insert(defensive_cache.velocity_history, velocity)
-            if #defensive_cache.velocity_history > 5 then
+            if #defensive_cache.velocity_history > 8 then
                 table.remove(defensive_cache.velocity_history, 1)
             end
             
+            -- 速度趋势分析
             local velocity_trend = 0
+            local velocity_acceleration = 0
             if #defensive_cache.velocity_history >= 3 then
                 velocity_trend = defensive_cache.velocity_history[#defensive_cache.velocity_history] - 
                                 defensive_cache.velocity_history[1]
+                
+                -- 计算加速度
+                if #defensive_cache.velocity_history >= 5 then
+                    local recent_trend = defensive_cache.velocity_history[#defensive_cache.velocity_history] - 
+                                        defensive_cache.velocity_history[#defensive_cache.velocity_history - 2]
+                    local older_trend = defensive_cache.velocity_history[#defensive_cache.velocity_history - 2] - 
+                                       defensive_cache.velocity_history[#defensive_cache.velocity_history - 4]
+                    velocity_acceleration = recent_trend - older_trend
+                end
             end
             
+            -- 基于速度和加速度的自适应调整
             if velocity > 250 then
                 velocity_mod = velocity_trend > 50 and 4 or 3
+                if velocity_acceleration > 30 then
+                    velocity_mod = velocity_mod + 1  -- 快速加速时增加更多
+                end
             elseif velocity > 150 then
                 velocity_mod = velocity_trend > 30 and 3 or 2
             elseif velocity > 100 then
                 velocity_mod = 1
             elseif velocity < 30 then
                 velocity_mod = -1
+                -- 静止时注入混沌
+                if velocity < 10 and adaptive_chaos_random(1, 100) <= 25 then
+                    chaos_mod = adaptive_chaos_random(-2, 2)
+                end
             end
             
             velocity_mod = math.floor(velocity_mod * server_profile.jitter_mult)
         end
         
+        -- 增强的威胁检测系统
         local threat = client.current_threat()
+        local multi_threat_count = 0
+        
+        -- 检测多个威胁
+        local players = entity.get_players(true)
+        if players then
+            for _, enemy in ipairs(players) do
+                if entity.is_alive(enemy) and not entity.is_dormant(enemy) then
+                    local ex, ey, ez = entity.get_prop(enemy, "m_vecOrigin")
+                    local mx, my, mz = entity.get_prop(me, "m_vecOrigin")
+                    if ex and mx then
+                        local dist = math.sqrt((ex-mx)^2 + (ey-my)^2 + (ez-mz)^2)
+                        if dist < 1500 then  -- 1500单位内的敌人
+                            multi_threat_count = multi_threat_count + 1
+                        end
+                    end
+                end
+            end
+        end
+        
+        defensive_cache.multi_threat_detected = multi_threat_count >= 2
+        
         if threat and not entity.is_dormant(threat) then
             local enemy_pitch, enemy_yaw = entity.get_prop(threat, "m_angEyeAngles")
             if enemy_pitch and enemy_yaw then
                 local enemy_aim = adaptive.enemy_aim
                 table.insert(enemy_aim.aim_history, {yaw = enemy_yaw, pitch = enemy_pitch, tick = tick})
-                if #enemy_aim.aim_history > 12 then
+                if #enemy_aim.aim_history > 15 then
                     table.remove(enemy_aim.aim_history, 1)
                 end
                 
                 if #enemy_aim.aim_history >= 4 then
                     local yaw_variance = 0
                     local pitch_variance = 0
+                    local max_yaw_change = 0
+                    local max_pitch_change = 0
+                    
                     for i = 2, #enemy_aim.aim_history do
-                        yaw_variance = yaw_variance + math.abs(enemy_aim.aim_history[i].yaw - enemy_aim.aim_history[i-1].yaw)
-                        pitch_variance = pitch_variance + math.abs(enemy_aim.aim_history[i].pitch - enemy_aim.aim_history[i-1].pitch)
+                        local yaw_change = math.abs(enemy_aim.aim_history[i].yaw - enemy_aim.aim_history[i-1].yaw)
+                        local pitch_change = math.abs(enemy_aim.aim_history[i].pitch - enemy_aim.aim_history[i-1].pitch)
+                        
+                        yaw_variance = yaw_variance + yaw_change
+                        pitch_variance = pitch_variance + pitch_change
+                        
+                        max_yaw_change = math.max(max_yaw_change, yaw_change)
+                        max_pitch_change = math.max(max_pitch_change, pitch_change)
                     end
                     yaw_variance = yaw_variance / (#enemy_aim.aim_history - 1)
                     pitch_variance = pitch_variance / (#enemy_aim.aim_history - 1)
                     
                     local total_variance = yaw_variance + pitch_variance
+                    
+                    -- 检测敌人是否锁定我们
                     if total_variance < 3 then
-                        threat_mod = 3  
+                        threat_mod = 4  -- 敌人高度锁定
+                        defensive_cache.threat_lock_counter = defensive_cache.threat_lock_counter + 1
+                        
+                        -- 如果持续被锁定，触发紧急模式
+                        if defensive_cache.threat_lock_counter >= 4 then
+                            defensive_cache.emergency_mode = true
+                            defensive_cache.emergency_mode_ticks = adaptive_chaos_random(10, 18)
+                            defensive_cache.threat_lock_counter = 0
+                        end
                     elseif total_variance < 8 then
                         threat_mod = 2  
+                        defensive_cache.threat_lock_counter = math.max(0, defensive_cache.threat_lock_counter - 1)
                     elseif total_variance < 20 then
                         threat_mod = 1  
+                        defensive_cache.threat_lock_counter = 0
+                    else
+                        defensive_cache.threat_lock_counter = 0
                     end
                     
+                    -- 检测突然的瞄准变化（可能是预瞄）
+                    if max_yaw_change > 30 or max_pitch_change > 20 then
+                        threat_mod = threat_mod + 1
+                        chaos_mod = chaos_mod + adaptive_chaos_random(1, 3)
+                    end
+                    
+                    -- 分析最近的瞄准趋势
                     if #enemy_aim.aim_history >= 6 then
                         local recent_variance = 0
                         for i = #enemy_aim.aim_history - 2, #enemy_aim.aim_history do
@@ -5717,11 +6687,21 @@ local function calculate_defensive_speed(builder_state_items)
                         recent_variance = recent_variance / 3
                         
                         if recent_variance < 2 then
-                            threat_mod = threat_mod + 1  
+                            threat_mod = threat_mod + 2  -- 最近瞄准非常稳定
+                        elseif recent_variance < 5 then
+                            threat_mod = threat_mod + 1
                         end
+                    end
+                    
+                    -- 多威胁情况下增加混沌
+                    if defensive_cache.multi_threat_detected then
+                        threat_mod = threat_mod + 1
+                        chaos_mod = chaos_mod + adaptive_chaos_random(0, 2)
                     end
                 end
             end
+        else
+            defensive_cache.threat_lock_counter = 0
         end
         
         if server_profile.ping_ms > 80 then
@@ -5730,34 +6710,67 @@ local function calculate_defensive_speed(builder_state_items)
             ping_mod = 1
         end
         
+        -- 增强的混沌注入系统
+        if defensive_cache.chaos_injection_level > 0 then
+            chaos_mod = chaos_mod + adaptive_chaos_random(0, defensive_cache.chaos_injection_level * 2)
+        end
+        
+        -- 紧急模式下的极端混沌
+        if defensive_cache.emergency_mode then
+            local emergency_chaos = adaptive_chaos_random(-3, 4)
+            chaos_mod = chaos_mod + emergency_chaos
+            
+            -- 随机反转方向
+            if adaptive_chaos_random(1, 100) <= 35 then
+                adaptive.direction = -adaptive.direction
+            end
+        end
+        
         if adaptive.next_change_tick == 0 or tick >= adaptive.next_change_tick then
-            local chaos_val = adaptive_chaos_random(0, 5)
-            local direction_change = adaptive_chaos_random(1, 100) <= 30
+            local chaos_val = adaptive_chaos_random(0, 6)  -- 增加混沌范围
+            local direction_change = adaptive_chaos_random(1, 100) <= 35  -- 增加方向改变概率
             
             if direction_change then
                 adaptive.direction = -adaptive.direction
             end
             
-            adaptive.target_offset = base_delay + velocity_mod + threat_mod + ping_mod + server_profile.adaptive_offset
+            adaptive.target_offset = base_delay + velocity_mod + threat_mod + ping_mod + chaos_mod + server_profile.adaptive_offset
             adaptive.target_offset = adaptive.target_offset + (chaos_val * adaptive.direction)
             
             local max_offset = defensive_cache.performance_score > 0.7 and 14 or 13
             adaptive.target_offset = math.max(0, math.min(max_offset, adaptive.target_offset))
             
-            local change_interval = adaptive_chaos_random(2, 5)
-            if threat_mod > 1 then
-                change_interval = math.max(1, change_interval - 1)  
+            -- 自适应变化间隔
+            local change_interval = adaptive_chaos_random(1, 5)  -- 更频繁的变化
+            if threat_mod > 2 then
+                change_interval = 1  -- 高威胁时每tick都变化
+            elseif threat_mod > 0 then
+                change_interval = math.max(1, change_interval - 1)
             elseif threat_mod == 0 then
-                change_interval = change_interval + 1  
+                change_interval = change_interval + 1
             end
+            
+            -- 紧急模式下更频繁变化
+            if defensive_cache.emergency_mode then
+                change_interval = math.max(1, math.floor(change_interval * 0.5))
+            end
+            
             adaptive.next_change_tick = tick + change_interval
         end
         
+        -- 动态平滑速度
         local smooth_speed = 0.35
-        if threat_mod > 1 then
-            smooth_speed = 0.7  
+        if threat_mod > 2 then
+            smooth_speed = 0.8  -- 高威胁时快速响应
+        elseif threat_mod > 0 then
+            smooth_speed = 0.5
         elseif threat_mod == 0 then
             smooth_speed = 0.2  
+        end
+        
+        -- 紧急模式下降低平滑度以增加不可预测性
+        if defensive_cache.emergency_mode then
+            smooth_speed = math.min(1.0, smooth_speed * 1.5)
         end
         
         adaptive.current_adaptive_offset = adaptive.current_adaptive_offset + 
@@ -5776,8 +6789,50 @@ local function calculate_defensive_speed(builder_state_items)
     local defensive_window = player_state.defensive.default - final_tick_delay
     local should_activate = tick <= defensive_window
     
-    if not should_activate and tick >= defensive_window - 2 then
-        should_activate = adaptive_chaos_random(1, 100) <= 30  
+    -- 增强的窗口边缘随机激活
+    if not should_activate and tick >= defensive_window - 3 then
+        local edge_chance = 30
+        if defensive_cache.emergency_mode then
+            edge_chance = 50  -- 紧急模式下更高的边缘激活概率
+        end
+        should_activate = adaptive_chaos_random(1, 100) <= edge_chance
+    end
+    
+    -- 模式检测：记录激活模式
+    table.insert(defensive_cache.pattern_buffer, should_activate and 1 or 0)
+    if #defensive_cache.pattern_buffer > 10 then
+        table.remove(defensive_cache.pattern_buffer, 1)
+    end
+    
+    -- 检测重复模式
+    if #defensive_cache.pattern_buffer >= 8 then
+        local pattern_detected = true
+        local first_half = {}
+        local second_half = {}
+        
+        for i = 1, 4 do
+            first_half[i] = defensive_cache.pattern_buffer[i]
+            second_half[i] = defensive_cache.pattern_buffer[i + 4]
+        end
+        
+        for i = 1, 4 do
+            if first_half[i] ~= second_half[i] then
+                pattern_detected = false
+                break
+            end
+        end
+        
+        if pattern_detected then
+            -- 检测到重复模式，触发紧急混沌
+            defensive_cache.emergency_mode = true
+            defensive_cache.emergency_mode_ticks = adaptive_chaos_random(12, 20)
+            defensive_cache.pattern_buffer = {}
+            
+            -- 随机反转当前决策
+            if adaptive_chaos_random(1, 100) <= 60 then
+                should_activate = not should_activate
+            end
+        end
     end
     
     defensive_cache.last_calculation_tick = tick
@@ -5870,23 +6925,153 @@ local function calculate_defensive_pitch(builder_state_items, cmd)
     end
     local result_pitch = 0
     local result_mode = "Custom"
-    if pitch_mode == "Static" then
-        result_pitch = pitch1
-    elseif pitch_mode == "Sway" then
-        local time = globals.curtime() * speed * 0.1
-        result_pitch = pitch1 + (pitch2 - pitch1) * (time % 1)
-    elseif pitch_mode == "Switch" then
-        result_pitch = defensive_system.pitch_inverted and pitch2 or pitch1
-    elseif pitch_mode == "Random" then
-        if cmd and cmd.chokedcommands == 0 then
-            defensive_system.pitch_random_seed = bit.bxor(defensive_system.pitch_random_seed, bit.lshift(defensive_system.pitch_random_seed, 13))
-            defensive_system.pitch_random_seed = bit.bxor(defensive_system.pitch_random_seed, bit.rshift(defensive_system.pitch_random_seed, 17))
-            defensive_system.pitch_random_seed = bit.bxor(defensive_system.pitch_random_seed, bit.lshift(defensive_system.pitch_random_seed, 5))
-            local range = pitch2 - pitch1 + 1
-            defensive_system.pitch_generated = pitch1 + (math.abs(defensive_system.pitch_random_seed) % range)
-        end
-        result_pitch = defensive_system.pitch_generated
+    
+    -- 增强的混沌因子系统
+    local chaos_factor = 0
+    local micro_jitter = adaptive_chaos_random(-2, 2)  -- 微抖动
+    local time_based_chaos = math.sin(globals.realtime() * 13.7) * adaptive_chaos_random(2, 5)
+    
+    if defensive_cache.emergency_mode then
+        chaos_factor = adaptive_chaos_random(-12, 12) + time_based_chaos
+    elseif defensive_cache.chaos_injection_level > 0 then
+        chaos_factor = adaptive_chaos_random(-6, 6) + micro_jitter
+    else
+        chaos_factor = micro_jitter + time_based_chaos * 0.3
     end
+    
+    -- 添加基于tick的随机偏移
+    local tick_chaos = (globals.tickcount() % 7) * adaptive_chaos_random(-1, 1)
+    chaos_factor = chaos_factor + tick_chaos
+    
+    if pitch_mode == "Static" then
+        -- 静态模式：固定pitch + 增强混沌
+        local static_variance = adaptive_chaos_random(-3, 3)
+        local static_time_chaos = math.cos(globals.realtime() * 11.3) * adaptive_chaos_random(1, 4)
+        result_pitch = pitch1 + chaos_factor + static_variance + static_time_chaos
+        
+        -- 紧急模式下额外随机偏移
+        if defensive_cache.emergency_mode then
+            result_pitch = result_pitch + adaptive_chaos_random(-8, 8)
+        end
+        
+    elseif pitch_mode == "Random" then
+        -- 随机模式：在pitch1-pitch2范围内完全随机 + 多层混沌
+        if cmd and cmd.chokedcommands == 0 then
+            local range = pitch2 - pitch1 + 1
+            result_pitch = pitch1 + adaptive_chaos_random(0, range - 1)
+            defensive_system.pitch_generated = result_pitch
+        else
+            result_pitch = defensive_system.pitch_generated
+        end
+        
+        -- 多层随机增强
+        local random_layer1 = adaptive_chaos_random(-4, 4)
+        local random_layer2 = math.sin(globals.realtime() * 17.9) * adaptive_chaos_random(2, 6)
+        local random_tick_mod = (globals.tickcount() % 11) * adaptive_chaos_random(-1, 1)
+        result_pitch = result_pitch + chaos_factor * 0.5 + random_layer1 + random_layer2 + random_tick_mod
+        
+        -- 紧急模式下极端随机
+        if defensive_cache.emergency_mode then
+            result_pitch = result_pitch + adaptive_chaos_random(-10, 10)
+        end
+        
+    elseif pitch_mode == "Jitter" then
+        -- 抖动模式：在pitch1和pitch2之间快速切换，延迟可变 + 增强混沌
+        if cmd and cmd.chokedcommands == 0 then
+            defensive_system.pitch_jitter_cycle = defensive_system.pitch_jitter_cycle + 1
+            if defensive_system.pitch_jitter_cycle >= defensive_system.pitch_jitter_delay then
+                defensive_system.pitch_jitter_cycle = 0
+                defensive_system.pitch_jitter_side = not defensive_system.pitch_jitter_side
+                local delay_min = builder_state_items.def_pitch_jitter_min and builder_state_items.def_pitch_jitter_min() or 1
+                local delay_max = builder_state_items.def_pitch_jitter_max and builder_state_items.def_pitch_jitter_max() or 3
+                defensive_system.pitch_jitter_delay = adaptive_chaos_random(delay_min, delay_max)
+            end
+        end
+        
+        result_pitch = (defensive_system.pitch_jitter_side and pitch2 or pitch1) + chaos_factor
+        
+        -- Jitter增强：添加微抖动和时间变化
+        local jitter_micro = adaptive_chaos_random(-3, 3)
+        local jitter_time_var = math.sin(globals.realtime() * 19.7) * adaptive_chaos_random(2, 5)
+        result_pitch = result_pitch + jitter_micro + jitter_time_var
+        
+        -- 紧急模式下随机跳过jitter周期并增加混沌
+        if defensive_cache.emergency_mode then
+            if adaptive_chaos_random(1, 100) <= 20 then
+                defensive_system.pitch_jitter_side = not defensive_system.pitch_jitter_side
+            end
+            result_pitch = result_pitch + adaptive_chaos_random(-7, 7)
+        end
+        
+    elseif pitch_mode == "Wave" then
+        -- 波浪模式：3层不同频率波浪叠加 + 随机相位偏移
+        local time = globals.curtime() * speed * 0.1
+        
+        -- 添加随机相位偏移使波浪不可预测
+        local phase_offset1 = math.sin(globals.realtime() * 5.3) * 0.5
+        local phase_offset2 = math.cos(globals.realtime() * 7.9) * 0.3
+        local phase_offset3 = math.sin(globals.realtime() * 13.1) * 0.2
+        
+        local wave1 = math.sin((time + phase_offset1) * math.pi * 2)
+        local wave2 = math.sin((time + phase_offset2) * math.pi * 4.3) * 0.5
+        local wave3 = math.sin((time + phase_offset3) * math.pi * 7.1) * 0.25
+        local combined_wave = (wave1 + wave2 + wave3) / 1.75
+        
+        result_pitch = pitch1 + (pitch2 - pitch1) * (combined_wave * 0.5 + 0.5) + chaos_factor
+        
+        -- 波浪模式额外随机层
+        local wave_variance = adaptive_chaos_random(-3, 3)
+        local wave_tick_mod = (globals.tickcount() % 13) * adaptive_chaos_random(-1, 1)
+        result_pitch = result_pitch + wave_variance + wave_tick_mod
+        
+        -- 紧急模式下扰动波浪
+        if defensive_cache.emergency_mode then
+            result_pitch = result_pitch + adaptive_chaos_random(-9, 9)
+        end
+        
+    elseif pitch_mode == "Chaos" then
+        -- 完全混沌模式：在pitch1到pitch2范围内随机 + 多层额外混沌
+        if cmd and cmd.chokedcommands == 0 then
+            -- 使用pitch1和pitch2定义混沌范围
+            local chaos_min = math.min(pitch1, pitch2)
+            local chaos_max = math.max(pitch1, pitch2)
+            -- 如果范围太小，扩展到至少30度
+            if chaos_max - chaos_min < 30 then
+                local center = (chaos_min + chaos_max) / 2
+                chaos_min = math.max(-89, center - 15)
+                chaos_max = math.min(89, center + 15)
+            end
+            result_pitch = adaptive_chaos_random(chaos_min, chaos_max)
+            defensive_system.pitch_generated = result_pitch
+        else
+            result_pitch = defensive_system.pitch_generated
+        end
+        
+        -- 多层混沌增强
+        local range_size = math.abs(pitch2 - pitch1)
+        local extra_chaos = math.min(15, math.floor(range_size * 0.3))
+        local chaos_layer1 = adaptive_chaos_random(-extra_chaos, extra_chaos)
+        local chaos_layer2 = math.sin(globals.realtime() * 23.7) * adaptive_chaos_random(3, 8)
+        local chaos_layer3 = math.cos(globals.realtime() * 31.3) * adaptive_chaos_random(2, 6)
+        local chaos_tick_layer = (globals.tickcount() % 17) * adaptive_chaos_random(-2, 2)
+        
+        result_pitch = result_pitch + chaos_layer1 + chaos_layer2 + chaos_layer3 + chaos_tick_layer
+        
+        -- 紧急模式下极端混沌
+        if defensive_cache.emergency_mode then
+            result_pitch = result_pitch + adaptive_chaos_random(-15, 15)
+            -- 随机完全重新生成
+            if adaptive_chaos_random(1, 100) <= 25 then
+                result_pitch = adaptive_chaos_random(-89, 89)
+            end
+        end
+    end
+    
+    -- 多威胁情况下增加pitch抖动
+    if defensive_cache.multi_threat_detected then
+        result_pitch = result_pitch + adaptive_chaos_random(-3, 3)
+    end
+    
     result_pitch = math.max(-89, math.min(89, result_pitch))
     sys.cached_pitch_mode = result_mode
     sys.cached_pitch_offset = result_pitch
@@ -5913,14 +7098,74 @@ local function calculate_defensive_yaw(builder_state_items, freestand_side, cmd)
     local result_yaw_mode = "180"
     local result_yaw_base = nil
     local sign_multiplier = (freestand_side == -1) and -1 or 1
+    
+    -- 增强的混沌因子系统
+    local chaos_factor = 0
+    local micro_jitter = adaptive_chaos_random(-3, 3)
+    local time_based_chaos = math.sin(globals.realtime() * 15.7) * adaptive_chaos_random(3, 7)
+    local tick_chaos = (globals.tickcount() % 9) * adaptive_chaos_random(-2, 2)
+    
+    if defensive_cache.emergency_mode then
+        chaos_factor = adaptive_chaos_random(-15, 15) + time_based_chaos
+        -- 紧急模式下随机反转侧面
+        if adaptive_chaos_random(1, 100) <= 30 then
+            sign_multiplier = -sign_multiplier
+        end
+    elseif defensive_cache.chaos_injection_level > 0 then
+        chaos_factor = adaptive_chaos_random(-8, 8) + micro_jitter
+    else
+        chaos_factor = micro_jitter + time_based_chaos * 0.4
+    end
+    
+    chaos_factor = chaos_factor + tick_chaos
+    
+    -- 威胁锁定时增加混沌
+    if defensive_cache.threat_lock_counter > 2 then
+        chaos_factor = chaos_factor + adaptive_chaos_random(-10, 10)
+    end
+    
     if yaw_mode == "Static" then
-        result_yaw_offset = yaw_offset * sign_multiplier
+        -- 静态模式增强：基础偏移 + 多层混沌
+        local static_variance = adaptive_chaos_random(-4, 4)
+        local static_time_var = math.cos(globals.realtime() * 12.9) * adaptive_chaos_random(2, 6)
+        result_yaw_offset = yaw_offset * sign_multiplier + chaos_factor + static_variance + static_time_var
+        
+        -- 紧急模式下额外偏移
+        if defensive_cache.emergency_mode then
+            result_yaw_offset = result_yaw_offset + adaptive_chaos_random(-12, 12)
+        end
+        
     elseif yaw_mode == "Spin" then
-        result_yaw_offset = ((globals.curtime() * (speed * 12)) % 360) * sign_multiplier
-    elseif yaw_mode == "Sway" then
-        local time = globals.curtime() * speed * 0.1
-        result_yaw_offset = (yaw_left + (yaw_right - yaw_left) * (time % 1)) * sign_multiplier
+        -- 增强旋转模式：动态速度 + 多层非线性变化
+        local speed_variance = adaptive_chaos_random(-3, 3) * 0.1  -- ±0.3的速度波动
+        local dynamic_speed = speed + speed_variance
+        
+        -- 随机方向反转（小概率）
+        if adaptive_chaos_random(1, 100) <= 8 then
+            dynamic_speed = -dynamic_speed
+        end
+        
+        local base_spin = ((globals.curtime() * (dynamic_speed * 12)) % 360)
+        
+        -- 多层非线性旋转增强
+        local chaos_spin1 = math.sin(globals.curtime() * 7.3) * 30
+        local chaos_spin2 = math.cos(globals.curtime() * 11.7) * adaptive_chaos_random(10, 25)
+        local chaos_spin3 = math.sin(globals.curtime() * 19.3) * adaptive_chaos_random(5, 15)
+        local tick_spin_mod = (globals.tickcount() % 11) * adaptive_chaos_random(-3, 3)
+        
+        result_yaw_offset = (base_spin + chaos_spin1 + chaos_spin2 + chaos_spin3 + tick_spin_mod + chaos_factor) * sign_multiplier
+        
+        -- 紧急模式下随机跳跃角度
+        if defensive_cache.emergency_mode then
+            result_yaw_offset = result_yaw_offset + adaptive_chaos_random(-30, 30)
+            -- 随机完全改变旋转方向
+            if adaptive_chaos_random(1, 100) <= 15 then
+                result_yaw_offset = -result_yaw_offset
+            end
+        end
+        
     elseif yaw_mode == "Jitter" then
+        -- 增强Jitter模式：可变延迟 + 多层混沌
         if cmd and cmd.chokedcommands == 0 then
             defensive_system.jitter_cycle = defensive_system.jitter_cycle + 1
             if defensive_system.jitter_cycle >= defensive_system.jitter_delay then
@@ -5928,17 +7173,55 @@ local function calculate_defensive_yaw(builder_state_items, freestand_side, cmd)
                 defensive_system.jitter_side = not defensive_system.jitter_side
                 local delay_min = builder_state_items.def_jitter_delay_min()
                 local delay_max = builder_state_items.def_jitter_delay_max()
-                defensive_system.jitter_delay = math.random(delay_min, delay_max)
+                defensive_system.jitter_delay = adaptive_chaos_random(delay_min, delay_max)
             end
         end
-        result_yaw_offset = (defensive_system.jitter_side and yaw_left or yaw_right) * sign_multiplier
+        
+        result_yaw_offset = (defensive_system.jitter_side and yaw_left or yaw_right) * sign_multiplier + chaos_factor
+        
+        -- Jitter增强：微抖动和时间变化
+        local jitter_micro = adaptive_chaos_random(-4, 4)
+        local jitter_time_var = math.sin(globals.realtime() * 21.3) * adaptive_chaos_random(3, 8)
+        local jitter_tick_mod = (globals.tickcount() % 13) * adaptive_chaos_random(-2, 2)
+        result_yaw_offset = result_yaw_offset + jitter_micro + jitter_time_var + jitter_tick_mod
+        
+        -- 紧急模式下随机跳过jitter周期并增加混沌
+        if defensive_cache.emergency_mode then
+            if adaptive_chaos_random(1, 100) <= 20 then
+                defensive_system.jitter_side = not defensive_system.jitter_side
+            end
+            result_yaw_offset = result_yaw_offset + adaptive_chaos_random(-15, 15)
+        end
+    elseif yaw_mode == "Random" then
+        -- 增强随机模式：完全随机 + 多层混沌
+        if cmd and cmd.chokedcommands == 0 then
+            defensive_system.yaw_generated = adaptive_chaos_random(-yaw_offset, yaw_offset)
+        end
+        result_yaw_offset = defensive_system.yaw_generated * sign_multiplier + chaos_factor
+        
+        -- 随机模式额外混沌层
+        local random_layer1 = adaptive_chaos_random(-6, 6)
+        local random_layer2 = math.sin(globals.realtime() * 25.7) * adaptive_chaos_random(4, 10)
+        local random_tick_mod = (globals.tickcount() % 15) * adaptive_chaos_random(-2, 2)
+        result_yaw_offset = result_yaw_offset + random_layer1 + random_layer2 + random_tick_mod
+        
+        -- 紧急模式下极端随机
+        if defensive_cache.emergency_mode then
+            result_yaw_offset = result_yaw_offset + adaptive_chaos_random(-20, 20)
+        end
+        
     elseif yaw_mode == "3-Way" then
+        -- 增强3-Way模式：循环角度 + 随机跳跃 + 混沌
         if cmd and cmd.chokedcommands == 0 then
             defensive_system.threeway_cycle = defensive_system.threeway_cycle + 1
             local delay = builder_state_items.def_3way_delay()
             if defensive_system.threeway_cycle >= delay then
                 defensive_system.threeway_cycle = 0
                 defensive_system.threeway_index = (defensive_system.threeway_index + 1) % 3
+                -- 紧急模式下随机跳跃索引
+                if defensive_cache.emergency_mode and adaptive_chaos_random(1, 100) <= 25 then
+                    defensive_system.threeway_index = adaptive_chaos_random(0, 2)
+                end
             end
         end
         local angles = {
@@ -5946,15 +7229,113 @@ local function calculate_defensive_yaw(builder_state_items, freestand_side, cmd)
             builder_state_items.def_3way_angle2(),
             builder_state_items.def_3way_angle3()
         }
-        result_yaw_offset = angles[defensive_system.threeway_index + 1] * sign_multiplier
-    elseif yaw_mode == "Random" then
-        if cmd and cmd.chokedcommands == 0 then
-            defensive_system.yaw_generated = math.random(-yaw_offset, yaw_offset)
+        result_yaw_offset = angles[defensive_system.threeway_index + 1] * sign_multiplier + chaos_factor
+        
+        -- 3-Way增强：每个角度添加随机偏移
+        local threeway_variance = adaptive_chaos_random(-5, 5)
+        local threeway_time_var = math.sin(globals.realtime() * 17.9) * adaptive_chaos_random(3, 7)
+        local threeway_tick_mod = (globals.tickcount() % 11) * adaptive_chaos_random(-2, 2)
+        result_yaw_offset = result_yaw_offset + threeway_variance + threeway_time_var + threeway_tick_mod
+        
+        -- 紧急模式下额外混沌
+        if defensive_cache.emergency_mode then
+            result_yaw_offset = result_yaw_offset + adaptive_chaos_random(-18, 18)
         end
-        result_yaw_offset = defensive_system.yaw_generated * sign_multiplier
+        
+    elseif yaw_mode == "5-Way" then
+        -- 增强5向模式：5个角度循环 + 随机跳跃 + 多层混沌
+        if cmd and cmd.chokedcommands == 0 then
+            defensive_system.fiveway_cycle = defensive_system.fiveway_cycle + 1
+            local delay = builder_state_items.def_5way_delay and builder_state_items.def_5way_delay() or 2
+            if defensive_system.fiveway_cycle >= delay then
+                defensive_system.fiveway_cycle = 0
+                defensive_system.fiveway_index = (defensive_system.fiveway_index + 1) % 5
+                -- 紧急模式下随机跳跃索引
+                if defensive_cache.emergency_mode and adaptive_chaos_random(1, 100) <= 30 then
+                    defensive_system.fiveway_index = adaptive_chaos_random(0, 4)
+                end
+            end
+        end
+        local angles = {
+            builder_state_items.def_5way_angle1 and builder_state_items.def_5way_angle1() or -90,
+            builder_state_items.def_5way_angle2 and builder_state_items.def_5way_angle2() or -45,
+            builder_state_items.def_5way_angle3 and builder_state_items.def_5way_angle3() or 0,
+            builder_state_items.def_5way_angle4 and builder_state_items.def_5way_angle4() or 45,
+            builder_state_items.def_5way_angle5 and builder_state_items.def_5way_angle5() or 90
+        }
+        result_yaw_offset = angles[defensive_system.fiveway_index + 1] * sign_multiplier + chaos_factor
+        
+        -- 5-Way增强：每个角度添加随机偏移
+        local fiveway_variance = adaptive_chaos_random(-6, 6)
+        local fiveway_time_var = math.sin(globals.realtime() * 23.1) * adaptive_chaos_random(4, 9)
+        local fiveway_tick_mod = (globals.tickcount() % 17) * adaptive_chaos_random(-3, 3)
+        result_yaw_offset = result_yaw_offset + fiveway_variance + fiveway_time_var + fiveway_tick_mod
+        
+        -- 紧急模式下额外混沌
+        if defensive_cache.emergency_mode then
+            result_yaw_offset = result_yaw_offset + adaptive_chaos_random(-20, 20)
+        end
+        
+    elseif yaw_mode == "L&R Random" then
+        -- 增强左右随机模式：在left和right范围内完全随机 + 多层混沌
+        if cmd and cmd.chokedcommands == 0 then
+            local range_min = math.min(yaw_left, yaw_right)
+            local range_max = math.max(yaw_left, yaw_right)
+            defensive_system.yaw_generated = adaptive_chaos_random(range_min, range_max)
+        end
+        result_yaw_offset = defensive_system.yaw_generated * sign_multiplier + chaos_factor
+        
+        -- L&R Random增强：多层随机变化
+        local lr_random_layer1 = adaptive_chaos_random(-7, 7)
+        local lr_random_layer2 = math.cos(globals.realtime() * 27.3) * adaptive_chaos_random(5, 11)
+        local lr_random_tick_mod = (globals.tickcount() % 19) * adaptive_chaos_random(-3, 3)
+        result_yaw_offset = result_yaw_offset + lr_random_layer1 + lr_random_layer2 + lr_random_tick_mod
+        
+        -- 紧急模式下极端随机
+        if defensive_cache.emergency_mode then
+            result_yaw_offset = result_yaw_offset + adaptive_chaos_random(-22, 22)
+            -- 随机完全重新生成
+            if adaptive_chaos_random(1, 100) <= 20 then
+                local range_min = math.min(yaw_left, yaw_right)
+                local range_max = math.max(yaw_left, yaw_right)
+                result_yaw_offset = adaptive_chaos_random(range_min, range_max) * sign_multiplier
+            end
+        end
     end
+    
+    -- 多威胁情况下增加yaw抖动
+    if defensive_cache.multi_threat_detected then
+        result_yaw_offset = result_yaw_offset + adaptive_chaos_random(-8, 8)
+    end
+    
+    -- 角度归一化
     while result_yaw_offset > 180 do result_yaw_offset = result_yaw_offset - 360 end
     while result_yaw_offset < -180 do result_yaw_offset = result_yaw_offset + 360 end
+    
+    -- 记录角度变化用于模式检测
+    local angle_change = math.abs(result_yaw_offset - defensive_cache.last_angles.yaw)
+    table.insert(defensive_cache.angle_variance_history, angle_change)
+    if #defensive_cache.angle_variance_history > 8 then
+        table.remove(defensive_cache.angle_variance_history, 1)
+    end
+    
+    -- 检测角度变化是否过于规律
+    if #defensive_cache.angle_variance_history >= 6 then
+        local variance_sum = 0
+        for _, v in ipairs(defensive_cache.angle_variance_history) do
+            variance_sum = variance_sum + v
+        end
+        local avg_variance = variance_sum / #defensive_cache.angle_variance_history
+        
+        -- 如果变化过于一致，注入额外混沌
+        if avg_variance < 5 then
+            result_yaw_offset = result_yaw_offset + adaptive_chaos_random(-20, 20)
+            defensive_cache.angle_variance_history = {}
+        end
+    end
+    
+    defensive_cache.last_angles.yaw = result_yaw_offset
+    
     sys.cached_yaw_mode = result_yaw_mode
     sys.cached_yaw_offset = result_yaw_offset
     sys.cached_yaw_base = result_yaw_base
@@ -5994,6 +7375,8 @@ client.set_event_callback('setup_command', function(cmd)
             def_pitch_1 = function() return def_settings.def_pitch_1 and def_settings.def_pitch_1:get() or 0 end,
             def_pitch_2 = function() return def_settings.def_pitch_2 and def_settings.def_pitch_2:get() or 0 end,
             def_pitch_speed = function() return def_settings.def_pitch_speed and def_settings.def_pitch_speed:get() or 20 end,
+            def_pitch_jitter_min = function() return def_settings.def_pitch_jitter_min and def_settings.def_pitch_jitter_min:get() or 1 end,
+            def_pitch_jitter_max = function() return def_settings.def_pitch_jitter_max and def_settings.def_pitch_jitter_max:get() or 3 end,
             def_yaw_mode = function() return def_settings.def_yaw_mode and def_settings.def_yaw_mode:get() or "Off" end,
             def_yaw_offset = function() return def_settings.def_yaw_offset and def_settings.def_yaw_offset:get() or 0 end,
             def_yaw_left = function() return def_settings.def_yaw_left and def_settings.def_yaw_left:get() or 0 end,
@@ -6004,7 +7387,13 @@ client.set_event_callback('setup_command', function(cmd)
             def_3way_angle1 = function() return def_settings.def_3way_angle1 and def_settings.def_3way_angle1:get() or -60 end,
             def_3way_angle2 = function() return def_settings.def_3way_angle2 and def_settings.def_3way_angle2:get() or 0 end,
             def_3way_angle3 = function() return def_settings.def_3way_angle3 and def_settings.def_3way_angle3:get() or 60 end,
-            def_3way_delay = function() return def_settings.def_3way_delay and def_settings.def_3way_delay:get() or 2 end
+            def_3way_delay = function() return def_settings.def_3way_delay and def_settings.def_3way_delay:get() or 2 end,
+            def_5way_angle1 = function() return def_settings.def_5way_angle1 and def_settings.def_5way_angle1:get() or -90 end,
+            def_5way_angle2 = function() return def_settings.def_5way_angle2 and def_settings.def_5way_angle2:get() or -45 end,
+            def_5way_angle3 = function() return def_settings.def_5way_angle3 and def_settings.def_5way_angle3:get() or 0 end,
+            def_5way_angle4 = function() return def_settings.def_5way_angle4 and def_settings.def_5way_angle4:get() or 45 end,
+            def_5way_angle5 = function() return def_settings.def_5way_angle5 and def_settings.def_5way_angle5:get() or 90 end,
+            def_5way_delay = function() return def_settings.def_5way_delay and def_settings.def_5way_delay:get() or 2 end
         }
         
         if should_use_defensive_with_speed(builder_state_items, player_state.defensive_ticks_left) then

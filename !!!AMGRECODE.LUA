@@ -25,6 +25,84 @@ function utils.normalize_angle(ang)
     return ang
 end
 
+function utils.get_pitch_spin(current, min_val, max_val, speed)
+    local min_v = math.min(min_val, max_val)
+    local max_v = math.max(min_val, max_val)
+    if current < max_v then
+        current = current + speed - 0.4
+    elseif max_v <= current then
+        current = min_v
+    end
+    return math.max(-89, math.min(89, current))
+end
+
+function utils.get_yaw_spin(current, min_val, max_val, speed)
+    local min_v = math.min(min_val, max_val)
+    local max_v = math.max(min_val, max_val)
+    if current < max_v then
+        current = current + speed - 0.4
+    elseif max_v <= current then
+        current = min_v
+    end
+    return math.max(-180, math.min(180, current))
+end
+
+function utils.get_pitch_cycle_spin(min_val, max_val, speed)
+    return (max_val + min_val) / 2 + (max_val - min_val) / 2 * math.sin(globals.curtime() * (speed * 0.2))
+end
+
+function utils.get_yaw_cycle_spin(full, speed, invert)
+    local t = math.sin(globals.curtime() * (speed * 0.2)) * 0.5 + 0.5
+    if invert then
+        return full * -0.5 + (full * 0.5 - full * -0.5) * t
+    else
+        return 180 + full * -0.5 + (full * 0.5 - full * -0.5) * t
+    end
+end
+
+function utils.random_jitter(full)
+    local sign = math.random(0, 1) == 0 and 1 or -1
+    local offset = math.random() * full * 0.5 - full * 0.25
+    return sign * 90 + offset
+end
+
+function utils.spin_jitter(full, speed, side)
+    local sign = side and 1 or -1
+    local t = (globals.curtime() * (speed * 0.1)) % 1
+    local offset = full * -0.5 + (full * 0.5 - full * -0.5) * t
+    return sign * 90 + offset
+end
+
+function utils.custom_switch_random(min1, max1, min2, max2, switch_time)
+    local current_time = globals.curtime()
+    local cycle_time = switch_time * 2
+    local phase = (current_time % cycle_time) / cycle_time
+    
+    if phase < 0.5 then
+        return math.random() * (max1 - min1) + min1
+    else
+        return math.random() * (max2 - min2) + min2
+    end
+end
+
+function utils.custom_switch_jitter(min1, max1, min2, max2, switch_time, side)
+    local current_time = globals.curtime()
+    local cycle_time = switch_time * 2
+    local phase = (current_time % cycle_time) / cycle_time
+    
+    if phase < 0.5 then
+        return side and max1 or min1
+    else
+        return side and max2 or min2
+    end
+end
+
+function utils.normalize_yaw(angle)
+    while angle > 180 do angle = angle - 360 end
+    while angle < -180 do angle = angle + 360 end
+    return angle
+end
+
 function utils.utf8_chars(str)
     local chars, i = {}, 1
     while i <= #str do
@@ -282,15 +360,39 @@ menu.ragebot = {
     peekbot_enabled = pui_group:hotkey("Peek Bot"),
     peekbot_teleport = pui_group:hotkey("  Teleport Bot"),
     peekbot_range = pui_group:slider("  Peek Range", 0, 80, 45, true, "u", 1),
+    reset_fakelag_on_shot = pui_group:checkbox("Reset Fakelag on Shot"),
+    lethal_enabled = pui_group:checkbox("Lethal Mode"),
+    lethal_hp_threshold = pui_group:slider("  HP Threshold", 1, 100, 75, true, "hp", 1),
+    lethal_auto_baim = pui_group:checkbox("  Auto Body Aim"),
+    lethal_auto_damage = pui_group:checkbox("  Auto Damage Override"),
+    lethal_safe_point = pui_group:checkbox("  Force Safe Point"),
+    fakelag_enabled = pui_group:checkbox("Fakelag Override"),
+    fakelag_mode = pui_group:combobox("  Mode", {"Static", "Fluctuate", "Random", "Cycle"}),
+    fakelag_limit = pui_group:slider("  Limit", 1, 14, 14, true, "t", 1),
+    fakelag_min = pui_group:slider("  Min", 1, 14, 6, true, "t", 1),
+    fakelag_max = pui_group:slider("  Max", 1, 14, 14, true, "t", 1),
+    fakelag_step = pui_group:slider("  Cycle Speed", 1, 50, 10, true, "", 1),
+    fakelag_disable_exploit = pui_group:checkbox("  Disable on Exploits"),
 }
 local rage_refs = {
     rage_enabled = pui.reference("RAGE", "Aimbot", "Enabled"),
     double_tap = {ui.reference("Rage", "Aimbot", "Double tap")},
     duck_peek_assist = pui.reference("Rage", "Other", "Duck peek assist"),
+    force_baim = ui.reference("RAGE", "Aimbot", "Force body aim"),
+    force_sp = ui.reference("RAGE", "Aimbot", "Force safe point"),
+    min_damage = {ui.reference("RAGE", "Aimbot", "Minimum damage override")},
+}
+local fakelag_refs = {
+    enabled_and_limit = {ui.reference("AA", "Fake lag", "Limit")},
 }
 local onshot_antiaim_ref = {ui.reference("AA", "Other", "On shot anti-aim")}
 local slowmotion_checkbox_ref, slowmotion_hotkey_ref = ui.reference("AA", "Other", "Slow motion")
 local slowmotion_limit_ref = ui.new_slider("AA", "Other", "Slow motion limit", 1, 57, 50, true, "", 1, {[57] = "Max"})
+
+local fakelag_reset = {
+    shot_fired = false,
+    shot_tick = 0
+}
 local air_stop = {}
 air_stop.last_speed = 0
 air_stop.stop_frames = 0
@@ -685,6 +787,8 @@ local function pb_is_on_ground()
     local flags = entity.get_prop(lp, "m_fFlags")
     return bit.band(flags, 1) ~= 0
 end
+
+do
 local last_calc_tick = 0
 local peekbot_last_target_pos = nil
 local peekbot_movement_start_tick = 0
@@ -800,6 +904,8 @@ function peekbot.run(cmd)
         end
     end
 end
+end
+
 local function modify_velocity(cmd, goalspeed)
     if goalspeed <= 0 then
         return
@@ -818,6 +924,7 @@ local function modify_velocity(cmd, goalspeed)
     cmd.forwardmove = cmd.forwardmove * speedfactor
     cmd.sidemove = cmd.sidemove * speedfactor
 end
+
 menu.visual = {
     visual_category = pui_group:combobox("Category", {"HUD", "Logs", "World", "Effects"}),
     watermark_enabled = pui_group:checkbox("Watermark"),
@@ -857,6 +964,11 @@ menu.visual = {
     grenade_molotov_color = pui_group:color_picker("    Color", 255, 100, 50, 50),
     grenade_smoke = pui_group:checkbox("  Smoke"),
     grenade_smoke_color = pui_group:color_picker("    Color", 221, 219, 219, 50),
+    grenade_trail = pui_group:checkbox("Grenade Trail"),
+    grenade_trail_color = pui_group:color_picker("  Trail Color", 131, 139, 163, 250),
+    grenade_trail_thickness = pui_group:slider("  Thickness", 0, 5, 0, true, "px"),
+    grenade_trail_glow = pui_group:slider("  Glow Intensity", 0, 15, 13, true, ""),
+    grenade_trail_fade = pui_group:slider("  Fade Speed", 1, 50, 29, true, "s/10"),
 }
 local function update_visual_visibility()
     local current_tab = menu.tab:get()
@@ -917,6 +1029,12 @@ local function update_visual_visibility()
     menu.visual.grenade_molotov_color:set_visible(molotov_enabled)
     local smoke_enabled = grenade_enabled and menu.visual.grenade_smoke:get()
     menu.visual.grenade_smoke_color:set_visible(smoke_enabled)
+    menu.visual.grenade_trail:set_visible(is_effects)
+    local trail_enabled = is_effects and menu.visual.grenade_trail:get()
+    menu.visual.grenade_trail_color:set_visible(trail_enabled)
+    menu.visual.grenade_trail_thickness:set_visible(trail_enabled)
+    menu.visual.grenade_trail_glow:set_visible(trail_enabled)
+    menu.visual.grenade_trail_fade:set_visible(trail_enabled)
 end
 ui.set_callback(menu.visual.visual_category.ref, update_visual_visibility)
 ui.set_callback(menu.visual.watermark_enabled.ref, update_visual_visibility)
@@ -931,6 +1049,7 @@ ui.set_callback(menu.visual.scope_lines.ref, update_visual_visibility)
 ui.set_callback(menu.visual.grenade_radius.ref, update_visual_visibility)
 ui.set_callback(menu.visual.grenade_molotov.ref, update_visual_visibility)
 ui.set_callback(menu.visual.grenade_smoke.ref, update_visual_visibility)
+ui.set_callback(menu.visual.grenade_trail.ref, update_visual_visibility)
 update_visual_visibility()
 menu.misc = {
     chat_spammer = pui_group:checkbox("Chat Spammer"),
@@ -998,41 +1117,39 @@ for _, state_name in ipairs(state_list) do
     def_config.def_force = pui_group:checkbox("Force Defensive" .. ds, false)
     def_config.def_enable = pui_group:checkbox("Enable Defensive AA" .. ds, false)
 
-    def_config.def_tick_mode = pui_group:combobox("Tick Mode" .. ds, {"Custom", "Adaptive"})
+    def_config.def_tick_mode = pui_group:combobox("Tick Mode" .. ds, {"Static", "Jitter", "Random", "Random Jitter", "Random Trigger", "Random Static", "Cycle", "Beta", "Adaptive"})
     def_config.def_tick_speed = pui_group:slider("  Tick Delay" .. ds, 0, 14, 0, true, "t", 1)
+    def_config.def_tick_min = pui_group:slider("  Tick Min" .. ds, 1, 22, 4, true, "t", 1)
+    def_config.def_tick_max = pui_group:slider("  Tick Max" .. ds, 1, 22, 10, true, "t", 1)
+    def_config.def_tick_cycle_speed = pui_group:slider("  Cycle Speed" .. ds, 1, 50, 10, true, "", 1)
 
-    def_config.def_pitch_mode = pui_group:combobox("Pitch" .. ds, {"Off", "Static", "Random", "Jitter", "Wave", "Chaos"})
-    def_config.def_pitch_1 = pui_group:slider("  Pitch 1" .. ds, -89, 89, 0, true, "°", 1)
-    def_config.def_pitch_2 = pui_group:slider("  Pitch 2" .. ds, -89, 89, 0, true, "°", 1)
-    def_config.def_pitch_speed = pui_group:slider("  Pitch Speed" .. ds, -75, 75, 20, true, "", 0.1)
-    def_config.def_pitch_jitter_min = pui_group:slider("  Pitch Jitter Min" .. ds, 1, 8, 1, true, "t")
-    def_config.def_pitch_jitter_max = pui_group:slider("  Pitch Jitter Max" .. ds, 1, 8, 3, true, "t")
+    def_config.def_pitch_mode = pui_group:combobox("Pitch" .. ds, {
+        "Off", "Static", "Jitter", "Random", "Spin", "Random Static", "Wave"
+    })
+    def_config.def_pitch_static = pui_group:slider("  Pitch Value" .. ds, -89, 89, 89, true, "°", 1)
+    def_config.def_pitch_1 = pui_group:slider("  Pitch Min" .. ds, -89, 89, -89, true, "°", 1)
+    def_config.def_pitch_2 = pui_group:slider("  Pitch Max" .. ds, -89, 89, 89, true, "°", 1)
+    def_config.def_pitch_speed = pui_group:slider("  Pitch Speed" .. ds, 1, 45, 20, true, "", 1)
+    def_config.def_pitch_jitter_delay = pui_group:slider("  Jitter Delay" .. ds, 1, 8, 2, true, "t")
+    def_config.def_pitch_wave_type = pui_group:combobox("  Wave Type" .. ds, {"Sine", "Triangle", "Saw"})
+    def_config.def_pitch_wave_period = pui_group:slider("  Wave Period" .. ds, 10, 100, 30, true, "ms", 1)
 
-    def_config.def_yaw_mode = pui_group:combobox("Yaw" .. ds, {"Off", "Static", "Spin", "Jitter", "Random", "3-Way", "5-Way", "L&R Random"})
-    def_config.def_yaw_offset = pui_group:slider("  Yaw Offset" .. ds, -180, 180, 0, true, "°", 1)
-    def_config.def_yaw_left = pui_group:slider("  Yaw Left" .. ds, -180, 180, 0, true, "°", 1)
-    def_config.def_yaw_right = pui_group:slider("  Yaw Right" .. ds, -180, 180, 0, true, "°", 1)
-    def_config.def_yaw_speed = pui_group:slider("  Yaw Speed" .. ds, -75, 75, 20, true, "", 0.1)
-
-    def_config.def_jitter_delay_min = pui_group:slider("  Jitter Min" .. ds, 1, 8, 1, true, "t")
-    def_config.def_jitter_delay_max = pui_group:slider("  Jitter Max" .. ds, 1, 8, 3, true, "t")
-
-    def_config.def_3way_angle1 = pui_group:slider("  3-Way 1" .. ds, -180, 180, -60, true, "°", 1)
-    def_config.def_3way_angle2 = pui_group:slider("  3-Way 2" .. ds, -180, 180, 0, true, "°", 1)
-    def_config.def_3way_angle3 = pui_group:slider("  3-Way 3" .. ds, -180, 180, 60, true, "°", 1)
-    def_config.def_3way_delay = pui_group:slider("  3-Way Delay" .. ds, 1, 8, 2, true, "t")
-    
-    def_config.def_5way_angle1 = pui_group:slider("  5-Way 1" .. ds, -180, 180, -90, true, "°", 1)
-    def_config.def_5way_angle2 = pui_group:slider("  5-Way 2" .. ds, -180, 180, -45, true, "°", 1)
-    def_config.def_5way_angle3 = pui_group:slider("  5-Way 3" .. ds, -180, 180, 0, true, "°", 1)
-    def_config.def_5way_angle4 = pui_group:slider("  5-Way 4" .. ds, -180, 180, 45, true, "°", 1)
-    def_config.def_5way_angle5 = pui_group:slider("  5-Way 5" .. ds, -180, 180, 90, true, "°", 1)
-    def_config.def_5way_delay = pui_group:slider("  5-Way Delay" .. ds, 1, 8, 2, true, "t")
+    def_config.def_yaw_mode = pui_group:combobox("Yaw" .. ds, {
+        "Off", "Static", "Jitter", "Random", "Spin", "Cycle Spin", "Random Static", "Flick", "Clock"
+    })
+    def_config.def_yaw_static = pui_group:slider("  Yaw Value" .. ds, -180, 180, 0, true, "°", 1)
+    def_config.def_yaw_min = pui_group:slider("  Yaw Min" .. ds, -180, 180, -90, true, "°", 1)
+    def_config.def_yaw_max = pui_group:slider("  Yaw Max" .. ds, -180, 180, 90, true, "°", 1)
+    def_config.def_yaw_speed = pui_group:slider("  Yaw Speed" .. ds, 1, 45, 20, true, "", 1)
+    def_config.def_yaw_jitter_delay = pui_group:slider("  Jitter Delay" .. ds, 1, 8, 2, true, "t")
+    def_config.def_yaw_cycle_invert = pui_group:checkbox("  Cycle Invert" .. ds, false)
+    def_config.def_yaw_clock_step = pui_group:slider("  Clock Step" .. ds, 1, 90, 30, true, "°", 1)
+    def_config.def_yaw_clock_jitter = pui_group:slider("  Clock Jitter" .. ds, 0, 90, 15, true, "°", 1)
 end
 
 menu.configs_da = pui.setup(menu)
 
-local DEFAULT_CONFIG = "eyJidWlsZGVyIjp7IkNyb3VjaCI6eyJlbmFibGUiOnRydWUsImRlc3luY194d2F5X3N0ZXBzIjpbMCwwLDAsMCwwLDAsMCwwXSwiZGVzeW5jX3h3YXlfdmFyaWFuY2UiOjIsImRlc3luY190eXBlIjoiTFwvUiIsInlhd19iYXNlX2RlZ3JlZXMiOjMsImRlc3luY194d2F5X2NvdW50IjozLCJkZXN5bmNfcmFuZG9taXphdGlvbiI6NSwiYm9keV95YXdfdmFyaWFuY2VfZGVsYXkiOjIsInRpbWluZ190aWNrX2RlbGF5IjoyLCJkZXN5bmNfeHdheV9kZWxheSI6MywieWF3X2Jhc2VfcmFuZG9taXplIjo0LCJib2R5X3lhd19qaXR0ZXJfcmlnaHQiOjQ3LCJib2R5X3lhd19qaXR0ZXJfbGVmdCI6NTYsImJvZHlfeWF3X2ppdHRlcl92YXJpYW5jZSI6MjAsImJvZHlfeWF3X21vZGUiOiJKaXR0ZXIiLCJ0aW1pbmdfdGlja192YXJpYW5jZSI6MSwiYm9keV95YXdfZGVncmVlcyI6MCwiZGVzeW5jX2xlZnRfbGltaXQiOi0zMCwiZGVzeW5jX3JpZ2h0X2xpbWl0IjozNSwiYm9keV95YXdfZGVsYXlfdmFyaWFuY2UiOjV9LCJVc2UiOnsiZW5hYmxlIjp0cnVlLCJkZXN5bmNfeHdheV9zdGVwcyI6WzAsMCwwLDAsMCwwLDAsMF0sImRlc3luY194d2F5X3ZhcmlhbmNlIjoyLCJkZXN5bmNfdHlwZSI6IkxcL1IiLCJ5YXdfYmFzZV9kZWdyZWVzIjowLCJkZXN5bmNfeHdheV9jb3VudCI6MywiZGVzeW5jX3JhbmRvbWl6YXRpb24iOjQsImJvZHlfeWF3X3ZhcmlhbmNlX2RlbGF5IjozLCJ0aW1pbmdfdGlja19kZWxheSI6NCwiZGVzeW5jX3h3YXlfZGVsYXkiOjMsInlhd19iYXNlX3JhbmRvbWl6ZSI6MCwiYm9keV95YXdfaml0dGVyX3JpZ2h0Ijo0OCwiYm9keV95YXdfaml0dGVyX2xlZnQiOjUxLCJib2R5X3lhd19qaXR0ZXJfdmFyaWFuY2UiOjAsImJvZHlfeWF3X21vZGUiOiJKaXR0ZXIiLCJ0aW1pbmdfdGlja192YXJpYW5jZSI6MCwiYm9keV95YXdfZGVncmVlcyI6MCwiZGVzeW5jX2xlZnRfbGltaXQiOi0zMiwiZGVzeW5jX3JpZ2h0X2xpbWl0IjozNiwiYm9keV95YXdfZGVsYXlfdmFyaWFuY2UiOjB9LCJTdGFuZCI6eyJlbmFibGUiOnRydWUsImRlc3luY194d2F5X3N0ZXBzIjpbMCwwLDAsMCwwLDAsMCwwXSwiZGVzeW5jX3h3YXlfdmFyaWFuY2UiOjIsImRlc3luY190eXBlIjoiTFwvUiIsInlhd19iYXNlX2RlZ3JlZXMiOjEsImRlc3luY194d2F5X2NvdW50IjozLCJkZXN5bmNfcmFuZG9taXphdGlvbiI6NSwiYm9keV95YXdfdmFyaWFuY2VfZGVsYXkiOjIsInRpbWluZ190aWNrX2RlbGF5IjoyLCJkZXN5bmNfeHdheV9kZWxheSI6MywieWF3X2Jhc2VfcmFuZG9taXplIjozLCJib2R5X3lhd19qaXR0ZXJfcmlnaHQiOjU2LCJib2R5X3lhd19qaXR0ZXJfbGVmdCI6NTIsImJvZHlfeWF3X2ppdHRlcl92YXJpYW5jZSI6MTIsImJvZHlfeWF3X21vZGUiOiJKaXR0ZXIiLCJ0aW1pbmdfdGlja192YXJpYW5jZSI6MiwiYm9keV95YXdfZGVncmVlcyI6MCwiZGVzeW5jX2xlZnRfbGltaXQiOi0zMSwiZGVzeW5jX3JpZ2h0X2xpbWl0IjozMCwiYm9keV95YXdfZGVsYXlfdmFyaWFuY2UiOjB9LCJGcmVlc3RhbmQiOnsiZW5hYmxlIjp0cnVlLCJkZXN5bmNfeHdheV9zdGVwcyI6WzAsMCwwLDAsMCwwLDAsMF0sImRlc3luY194d2F5X3ZhcmlhbmNlIjoyLCJkZXN5bmNfdHlwZSI6IkxcL1IiLCJ5YXdfYmFzZV9kZWdyZWVzIjowLCJkZXN5bmNfeHdheV9jb3VudCI6MywiZGVzeW5jX3JhbmRvbWl6YXRpb24iOjMsImJvZHlfeWF3X3ZhcmlhbmNlX2RlbGF5IjoyLCJ0aW1pbmdfdGlja19kZWxheSI6MiwiZGVzeW5jX3h3YXlfZGVsYXkiOjMsInlhd19iYXNlX3JhbmRvbWl6ZSI6NSwiYm9keV95YXdfaml0dGVyX3JpZ2h0Ijo1OSwiYm9keV95YXdfaml0dGVyX2xlZnQiOjAsImJvZHlfeWF3X2ppdHRlcl92YXJpYW5jZSI6MCwiYm9keV95YXdfbW9kZSI6IkppdHRlciIsInRpbWluZ190aWNrX3ZhcmlhbmNlIjoxLCJib2R5X3lhd19kZWdyZWVzIjowLCJkZXN5bmNfbGVmdF9saW1pdCI6LTEwLCJkZXN5bmNfcmlnaHRfbGltaXQiOjgsImJvZHlfeWF3X2RlbGF5X3ZhcmlhbmNlIjoxfSwiRmFrZWxhZyI6eyJlbmFibGUiOnRydWUsImRlc3luY194d2F5X3N0ZXBzIjpbMCwwLDAsMCwwLDAsMCwwXSwiZGVzeW5jX3h3YXlfdmFyaWFuY2UiOjIsImRlc3luY190eXBlIjoiTFwvUiIsInlhd19iYXNlX2RlZ3JlZXMiOjAsImRlc3luY194d2F5X2NvdW50IjozLCJkZXN5bmNfcmFuZG9taXphdGlvbiI6NywiYm9keV95YXdfdmFyaWFuY2VfZGVsYXkiOjMsInRpbWluZ190aWNrX2RlbGF5IjoyLCJkZXN5bmNfeHdheV9kZWxheSI6MywieWF3X2Jhc2VfcmFuZG9taXplIjozLCJib2R5X3lhd19qaXR0ZXJfcmlnaHQiOjMwLCJib2R5X3lhd19qaXR0ZXJfbGVmdCI6MzAsImJvZHlfeWF3X2ppdHRlcl92YXJpYW5jZSI6MCwiYm9keV95YXdfbW9kZSI6IlN0YXRpYyIsInRpbWluZ190aWNrX3ZhcmlhbmNlIjowLCJib2R5X3lhd19kZWdyZWVzIjotMTAsImRlc3luY19sZWZ0X2xpbWl0IjotMiwiZGVzeW5jX3JpZ2h0X2xpbWl0IjoxLCJib2R5X3lhd19kZWxheV92YXJpYW5jZSI6MH0sIlNhZmUiOnsiZW5hYmxlIjp0cnVlLCJkZXN5bmNfeHdheV9zdGVwcyI6WzAsMCwwLDAsMCwwLDAsMF0sImRlc3luY194d2F5X3ZhcmlhbmNlIjoyLCJkZXN5bmNfdHlwZSI6IkxcL1IiLCJ5YXdfYmFzZV9kZWdyZWVzIjozLCJkZXN5bmNfeHdheV9jb3VudCI6MywiZGVzeW5jX3JhbmRvbWl6YXRpb24iOjUsImJvZHlfeWF3X3ZhcmlhbmNlX2RlbGF5IjoxLCJ0aW1pbmdfdGlja19kZWxheSI6MiwiZGVzeW5jX3h3YXlfZGVsYXkiOjMsInlhd19iYXNlX3JhbmRvbWl6ZSI6MywiYm9keV95YXdfaml0dGVyX3JpZ2h0Ijo1NCwiYm9keV95YXdfaml0dGVyX2xlZnQiOjQ3LCJib2R5X3lhd19qaXR0ZXJfdmFyaWFuY2UiOjIwLCJib2R5X3lhd19tb2RlIjoiSml0dGVyIiwidGltaW5nX3RpY2tfdmFyaWFuY2UiOjAsImJvZHlfeWF3X2RlZ3JlZXMiOjAsImRlc3luY19sZWZ0X2xpbWl0IjotMjksImRlc3luY19yaWdodF9saW1pdCI6MzEsImJvZHlfeWF3X2RlbGF5X3ZhcmlhbmNlIjo0fSwiTWFudWFsIjp7ImVuYWJsZSI6dHJ1ZSwiZGVzeW5jX3h3YXlfc3RlcHMiOlswLDAsMCwwLDAsMCwwLDBdLCJkZXN5bmNfeHdheV92YXJpYW5jZSI6MiwiZGVzeW5jX3R5cGUiOiJMXC9SIiwieWF3X2Jhc2VfZGVncmVlcyI6MCwiZGVzeW5jX3h3YXlfY291bnQiOjMsImRlc3luY19yYW5kb21pemF0aW9uIjo0LCJib2R5X3lhd192YXJpYW5jZV9kZWxheSI6MywidGltaW5nX3RpY2tfZGVsYXkiOjMsImRlc3luY194d2F5X2RlbGF5IjozLCJ5YXdfYmFzZV9yYW5kb21pemUiOjUsImJvZHlfeWF3X2ppdHRlcl9yaWdodCI6NTYsImJvZHlfeWF3X2ppdHRlcl9sZWZ0Ijo0OSwiYm9keV95YXdfaml0dGVyX3ZhcmlhbmNlIjo1LCJib2R5X3lhd19tb2RlIjoiSml0dGVyIiwidGltaW5nX3RpY2tfdmFyaWFuY2UiOjAsImJvZHlfeWF3X2RlZ3JlZXMiOjAsImRlc3luY19sZWZ0X2xpbWl0IjotMzEsImRlc3luY19yaWdodF9saW1pdCI6MzEsImJvZHlfeWF3X2RlbGF5X3ZhcmlhbmNlIjo1fSwiR2xvYmFsIjp7ImJvZHlfeWF3X2RlZ3JlZXMiOjAsImRlc3luY194d2F5X3N0ZXBzIjpbMCwwLDAsMCwwLDAsMCwwXSwiZGVzeW5jX3h3YXlfdmFyaWFuY2UiOjIsImRlc3luY190eXBlIjoiRGlzYWJsZWQiLCJ5YXdfYmFzZV9kZWdyZWVzIjowLCJkZXN5bmNfeHdheV9jb3VudCI6MywiZGVzeW5jX3JhbmRvbWl6YXRpb24iOjAsImJvZHlfeWF3X3ZhcmlhbmNlX2RlbGF5IjozLCJ0aW1pbmdfdGlja19kZWxheSI6MywiZGVzeW5jX3h3YXlfZGVsYXkiOjMsInlhd19iYXNlX3JhbmRvbWl6ZSI6MCwiYm9keV95YXdfaml0dGVyX3JpZ2h0IjozMCwiYm9keV95YXdfaml0dGVyX2xlZnQiOjMwLCJib2R5X3lhd19qaXR0ZXJfdmFyaWFuY2UiOjAsImJvZHlfeWF3X21vZGUiOiJEaXNhYmxlZCIsInRpbWluZ190aWNrX3ZhcmlhbmNlIjowLCJkZXN5bmNfbGVmdF9saW1pdCI6MCwiZGVzeW5jX3JpZ2h0X2xpbWl0IjowLCJib2R5X3lhd19kZWxheV92YXJpYW5jZSI6MH0sIk1vdmUiOnsiZW5hYmxlIjp0cnVlLCJkZXN5bmNfeHdheV9zdGVwcyI6WzAsMCwwLDAsMCwwLDAsMF0sImRlc3luY194d2F5X3ZhcmlhbmNlIjoyLCJkZXN5bmNfdHlwZSI6IkxcL1IiLCJ5YXdfYmFzZV9kZWdyZWVzIjowLCJkZXN5bmNfeHdheV9jb3VudCI6MywiZGVzeW5jX3JhbmRvbWl6YXRpb24iOjQsImJvZHlfeWF3X3ZhcmlhbmNlX2RlbGF5IjoyLCJ0aW1pbmdfdGlja19kZWxheSI6MiwiZGVzeW5jX3h3YXlfZGVsYXkiOjMsInlhd19iYXNlX3JhbmRvbWl6ZSI6MSwiYm9keV95YXdfaml0dGVyX3JpZ2h0Ijo1NiwiYm9keV95YXdfaml0dGVyX2xlZnQiOjQ4LCJib2R5X3lhd19qaXR0ZXJfdmFyaWFuY2UiOjE4LCJib2R5X3lhd19tb2RlIjoiSml0dGVyIiwidGltaW5nX3RpY2tfdmFyaWFuY2UiOjMsImJvZHlfeWF3X2RlZ3JlZXMiOjAsImRlc3luY19sZWZ0X2xpbWl0IjotMzQsImRlc3luY19yaWdodF9saW1pdCI6MzYsImJvZHlfeWF3X2RlbGF5X3ZhcmlhbmNlIjoyfSwiQWlyIjp7ImVuYWJsZSI6dHJ1ZSwiZGVzeW5jX3h3YXlfc3RlcHMiOlswLDAsMCwwLDAsMCwwLDBdLCJkZXN5bmNfeHdheV92YXJpYW5jZSI6MiwiZGVzeW5jX3R5cGUiOiJMXC9SIiwieWF3X2Jhc2VfZGVncmVlcyI6MSwiZGVzeW5jX3h3YXlfY291bnQiOjMsImRlc3luY19yYW5kb21pemF0aW9uIjo1LCJib2R5X3lhd192YXJpYW5jZV9kZWxheSI6MiwidGltaW5nX3RpY2tfZGVsYXkiOjIsImRlc3luY194d2F5X2RlbGF5IjozLCJ5YXdfYmFzZV9yYW5kb21pemUiOjMsImJvZHlfeWF3X2ppdHRlcl9yaWdodCI6NTQsImJvZHlfeWF3X2ppdHRlcl9sZWZ0Ijo0OSwiYm9keV95YXdfaml0dGVyX3ZhcmlhbmNlIjoxNSwiYm9keV95YXdfbW9kZSI6IkppdHRlciIsInRpbWluZ190aWNrX3ZhcmlhbmNlIjo0LCJib2R5X3lhd19kZWdyZWVzIjowLCJkZXN5bmNfbGVmdF9saW1pdCI6LTM0LCJkZXN5bmNfcmlnaHRfbGltaXQiOjM5LCJib2R5X3lhd19kZWxheV92YXJpYW5jZSI6MX0sIkMtQWlyIjp7ImVuYWJsZSI6dHJ1ZSwiZGVzeW5jX3h3YXlfc3RlcHMiOlswLDAsMCwwLDAsMCwwLDBdLCJkZXN5bmNfeHdheV92YXJpYW5jZSI6MiwiZGVzeW5jX3R5cGUiOiJMXC9SIiwieWF3X2Jhc2VfZGVncmVlcyI6MywiZGVzeW5jX3h3YXlfY291bnQiOjMsImRlc3luY19yYW5kb21pemF0aW9uIjo1LCJib2R5X3lhd192YXJpYW5jZV9kZWxheSI6MywidGltaW5nX3RpY2tfZGVsYXkiOjIsImRlc3luY194d2F5X2RlbGF5IjozLCJ5YXdfYmFzZV9yYW5kb21pemUiOjQsImJvZHlfeWF3X2ppdHRlcl9yaWdodCI6NTQsImJvZHlfeWF3X2ppdHRlcl9sZWZ0Ijo0OSwiYm9keV95YXdfaml0dGVyX3ZhcmlhbmNlIjo0LCJib2R5X3lhd19tb2RlIjoiSml0dGVyIiwidGltaW5nX3RpY2tfdmFyaWFuY2UiOjAsImJvZHlfeWF3X2RlZ3JlZXMiOjAsImRlc3luY19sZWZ0X2xpbWl0IjotMjksImRlc3luY19yaWdodF9saW1pdCI6MzEsImJvZHlfeWF3X2RlbGF5X3ZhcmlhbmNlIjowfSwiQy1Nb3ZlIjp7ImVuYWJsZSI6dHJ1ZSwiZGVzeW5jX3h3YXlfc3RlcHMiOlswLDAsMCwwLDAsMCwwLDBdLCJkZXN5bmNfeHdheV92YXJpYW5jZSI6MiwiZGVzeW5jX3R5cGUiOiJMXC9SIiwieWF3X2Jhc2VfZGVncmVlcyI6MSwiZGVzeW5jX3h3YXlfY291bnQiOjMsImRlc3luY19yYW5kb21pemF0aW9uIjo1LCJib2R5X3lhd192YXJpYW5jZV9kZWxheSI6MSwidGltaW5nX3RpY2tfZGVsYXkiOjIsImRlc3luY194d2F5X2RlbGF5IjozLCJ5YXdfYmFzZV9yYW5kb21pemUiOjEsImJvZHlfeWF3X2ppdHRlcl9yaWdodCI6NTUsImJvZHlfeWF3X2ppdHRlcl9sZWZ0Ijo0NywiYm9keV95YXdfaml0dGVyX3ZhcmlhbmNlIjoxNiwiYm9keV95YXdfbW9kZSI6IkppdHRlciIsInRpbWluZ190aWNrX3ZhcmlhbmNlIjowLCJib2R5X3lhd19kZWdyZWVzIjowLCJkZXN5bmNfbGVmdF9saW1pdCI6LTI5LCJkZXN5bmNfcmlnaHRfbGltaXQiOjMxLCJib2R5X3lhd19kZWxheV92YXJpYW5jZSI6Nn0sIlNsb3ciOnsiZW5hYmxlIjp0cnVlLCJkZXN5bmNfeHdheV9zdGVwcyI6WzAsMCwwLDAsMCwwLDAsMF0sImRlc3luY194d2F5X3ZhcmlhbmNlIjoyLCJkZXN5bmNfdHlwZSI6IkxcL1IiLCJ5YXdfYmFzZV9kZWdyZWVzIjowLCJkZXN5bmNfeHdheV9jb3VudCI6MywiZGVzeW5jX3JhbmRvbWl6YXRpb24iOjYsImJvZHlfeWF3X3ZhcmlhbmNlX2RlbGF5IjozLCJ0aW1pbmdfdGlja19kZWxheSI6MSwiZGVzeW5jX3h3YXlfZGVsYXkiOjMsInlhd19iYXNlX3JhbmRvbWl6ZSI6MiwiYm9keV95YXdfaml0dGVyX3JpZ2h0IjozMCwiYm9keV95YXdfaml0dGVyX2xlZnQiOjMwLCJib2R5X3lhd19qaXR0ZXJfdmFyaWFuY2UiOjAsImJvZHlfeWF3X21vZGUiOiJTdGF0aWMiLCJ0aW1pbmdfdGlja192YXJpYW5jZSI6MywiYm9keV95YXdfZGVncmVlcyI6LTEwLCJkZXN5bmNfbGVmdF9saW1pdCI6LTEsImRlc3luY19yaWdodF9saW1pdCI6MSwiYm9keV95YXdfZGVsYXlfdmFyaWFuY2UiOjB9fSwiY29uZmlnIjp7Im1pc2MiOnsiZWFydGhxdWFrZV9pbnRlbnNpdHkiOjEwMCwiYXV0b2J1eV9zZWNvbmRhcnkiOiJDWjc1XC9UZWM5XC9GaXZlU2V2ZW4iLCJhbmltYXRpb25fYWlyIjoiU3RhdGljIiwiYW5pbWF0aW9uX2JyZWFrZXIiOnRydWUsImNoYXRfc3BhbW1lciI6ZmFsc2UsImF1dG9idXlfdXRpbGl0aWVzIjpbIkFybW9yIiwiSGVsbWV0IiwiWmV1cyIsIkRlZnVzZXIiLCJ+Il0sImJvZHlfbGVhbiI6MCwiYXV0b2J1eV9wcmltYXJ5IjoiU2NvdXQiLCJwaXRjaF9vbl9sYW5kIjpmYWxzZSwiYXV0b2J1eV9ncmVuYWRlcyI6WyJNb2xvdG92IiwiU21va2UiLCJGbGFzaCIsIn4iXSwiZWFydGhxdWFrZSI6ZmFsc2UsImFuaW1hdGlvbl9ncm91bmQiOiJNb29ud2FsayIsImNsYW50YWdfdGV4dCI6IiIsImF1dG9idXlfZW5hYmxlZCI6dHJ1ZSwiY2xhbnRhZyI6ZmFsc2V9LCJ0YWIiOiLuh4EgQ29uZmlnIiwidmlzdWFsIjp7ImdyZW5hZGVfbW9sb3RvdiI6dHJ1ZSwiemV1c193YXJuaW5nIjp0cnVlLCJob3RrZXlzX2VuYWJsZWQiOnRydWUsImRhbWFnZV9pbmRpY2F0b3IiOnRydWUsImFzcGVjdF9yYXRpb19lbmFibGVkIjp0cnVlLCJrbmlmZV9wb3NpdGlvbmluZyI6Ii0iLCJjcm9zc2hhaXJfZW5hYmxlZCI6dHJ1ZSwid2F0ZXJtYXJrX2NvbG9yIjoiIzQyQjhGRkZGIiwidmlld21vZGVsX3giOjc2MSwibG9nc19lbmFibGVkIjp0cnVlLCJjcm9zc2hhaXJfZ2xvd19jb2xvciI6IiNBNEIyRjFGRiIsInNwZWN0YXRvcnNfZW5hYmxlZCI6ZmFsc2UsInZpZXdtb2RlbF9lbmFibGVkIjp0cnVlLCJncmVuYWRlX21vbG90b3ZfY29sb3IiOiIjQzFDMUMxMzIiLCJ2aWV3bW9kZWxfcm9sbCI6MCwidmlld21vZGVsX3oiOi0xNTczLCJjcm9zc2hhaXJfdGV4dF9jb2xvciI6IiNGRkZGRkZGRiIsImxvZ3Nfb2Zmc2V0Ijo1MDAsImxvZ3NfY29sb3JfbWlzcyI6IiNGRjdEOTZGRiIsImxvZ3NfZHVyYXRpb24iOjMwLCJsb2dzX3NlbGVjdCI6WyJOb3RpZnkiLCJTY3JlZW4iLCJDb25zb2xlIiwifiJdLCJ3YXRlcm1hcmtfZW5hYmxlZCI6dHJ1ZSwiZ3JlbmFkZV9yYWRpdXMiOnRydWUsImdyZW5hZGVfc21va2UiOnRydWUsImxvZ3NfY29sb3JfaGl0IjoiI0E0QjJGMUZGIiwiZ3JlbmFkZV9yYWRpdXNfZGlzcGxheSI6WyJUZXh0IiwifiJdLCJzcGVjdGF0b3JzX2NvbG9yIjoiIzQyQjhGRkZGIiwiaG90a2V5c19jb2xvciI6IiM0MkI4RkZGRiIsImdyZW5hZGVfc21va2VfY29sb3IiOiIjQzFDMUMxMzIiLCJzY29wZV9saW5lc19jb2xvciI6IiNBN0I5QzBGRiIsInZpc3VhbF9jYXRlZ29yeSI6IkxvZ3MiLCJ0aGlyZHBlcnNvbl9jb2xsaXNpb24iOnRydWUsInZpZXdtb2RlbF9mb3YiOi0xODc4LCJhc3BlY3RfcmF0aW8iOjEzNiwic2NvcGVfbGluZXNfb2Zmc2V0IjoxNDMsInZpZXdtb2RlbF95IjotMTM3MCwidGhpcmRwZXJzb25fZGlzdGFuY2UiOjUwLCJzY29wZV9saW5lcyI6dHJ1ZX0sIm1hbnVhbF9hYV9ob3RrZXkiOnsibWFudWFsX2JhY2siOlsyLDg4LCJ+Il0sIm1hbnVhbF9sZWZ0IjpbMiw5MCwifiJdLCJtYW51YWxfcmlnaHQiOlsyLDY3LCJ+Il0sIm1hbnVhbF9mb3J3YXJkIjpbMiwwLCJ+Il19LCJhbnRpYWltIjp7Im1hbnVhbF9iYWNrIjpbMiw4OCwifiJdLCJtYW51YWxfbGVmdCI6WzIsOTAsIn4iXSwiYWFfbW9kZSI6IkJ1aWxkZXIiLCJzYWZlX2hlYWRfdHJpZ2dlcnMiOlsiS25pZmUiLCJaZXVzIiwifiJdLCJtYW51YWxfcmlnaHQiOlsyLDY3LCJ+Il0sIm1hbnVhbF9mb3J3YXJkIjpbMiwwLCJ+Il0sImNvbmRpdGlvbiI6IkNyb3VjaCIsImZyZWVzdGFuZGluZyI6WzEsNSwifiJdLCJ1dGlsaXRpZXMiOlsiQXZvaWQgQmFja3N0YWIiLCJBbnRpLUFpbSBPbiBVc2UiLCJBdXRvIER1Y2sgaW4gQWlyIiwiRmFrZWR1Y2sgRWRnZSIsIkZhc3QgTGFkZGVyIiwifiJdLCJzYWZlX2hlYWQiOnRydWUsImVkZ2VfeWF3IjpbMSwwLCJ+Il19LCJyYWdlYm90Ijp7ImRvcm1hbnRfYWltYm90Ijp0cnVlLCJ1bnNhZmVfY2hhcmdlIjp0cnVlLCJoaWRlc2hvdHNfc3RhdGVzIjpbIkNyb3VjaCIsIkMtTW92ZSIsIlNsb3ciLCJ+Il0sImFpcl9zdG9wX2VuYWJsZWQiOnRydWUsImhpZGVzaG90c19lbmFibGVkIjp0cnVlLCJwZWVrYm90X3JhbmdlIjo2MSwicGVla2JvdF90ZWxlcG9ydCI6WzEsMCwifiJdLCJhaXJfc3RvcF9tdWx0aV9oaXRib3giOnRydWUsInBlZWtib3RfZW5hYmxlZCI6WzEsNSwifiJdLCJoaWRlc2hvdHNfd2VhcG9ucyI6WyJBV1AiLCJTY291dCIsIn4iXSwiYWlyX3N0b3BfcmFuZ2UiOjQwMH0sImRlZmVuc2l2ZSI6eyJNb3ZlIjp7ImVuYWJsZSI6dHJ1ZSwiZGVmXzN3YXlfYW5nbGUyIjowLCJkZWZfcGl0Y2hfMiI6MCwiZGVmX2ppdHRlcl9kZWxheV9tYXgiOjMsImRlZl8zd2F5X2FuZ2xlMSI6LTYwLCJkZWZfcGl0Y2hfbW9kZSI6Ik9mZiIsImRlZl95YXdfbW9kZSI6Ik9mZiIsImRlZl90aWNrX21vZGUiOiJDdXN0b20iLCJkZWZfeWF3X3NwZWVkIjoyMCwiZGVmX2ZvcmNlIjp0cnVlLCJkZWZfeWF3X2xlZnQiOjAsImRlZl9qaXR0ZXJfZGVsYXlfbWluIjoxLCJkZWZfcGl0Y2hfc3BlZWQiOjIwLCJkZWZfM3dheV9kZWxheSI6MiwiZGVmX3lhd19vZmZzZXQiOjAsImRlZl8zd2F5X2FuZ2xlMyI6NjAsImRlZl9waXRjaF8xIjowLCJkZWZfeWF3X3JpZ2h0IjowLCJkZWZfdGlja19zcGVlZCI6MCwiZGVmX2VuYWJsZSI6ZmFsc2V9LCJVc2UiOnsiZW5hYmxlIjp0cnVlLCJkZWZfM3dheV9hbmdsZTIiOjAsImRlZl9waXRjaF8yIjowLCJkZWZfaml0dGVyX2RlbGF5X21heCI6MywiZGVmXzN3YXlfYW5nbGUxIjotNjAsImRlZl9waXRjaF9tb2RlIjoiT2ZmIiwiZGVmX3lhd19tb2RlIjoiT2ZmIiwiZGVmX3RpY2tfbW9kZSI6IkN1c3RvbSIsImRlZl95YXdfc3BlZWQiOjIwLCJkZWZfZm9yY2UiOnRydWUsImRlZl95YXdfbGVmdCI6MCwiZGVmX2ppdHRlcl9kZWxheV9taW4iOjEsImRlZl9waXRjaF9zcGVlZCI6MjAsImRlZl8zd2F5X2RlbGF5IjoyLCJkZWZfeWF3X29mZnNldCI6MCwiZGVmXzN3YXlfYW5nbGUzIjo2MCwiZGVmX3BpdGNoXzEiOjAsImRlZl95YXdfcmlnaHQiOjAsImRlZl90aWNrX3NwZWVkIjowLCJkZWZfZW5hYmxlIjpmYWxzZX0sIlN0YW5kIjp7ImVuYWJsZSI6dHJ1ZSwiZGVmXzN3YXlfYW5nbGUyIjowLCJkZWZfcGl0Y2hfMiI6MCwiZGVmX2ppdHRlcl9kZWxheV9tYXgiOjMsImRlZl8zd2F5X2FuZ2xlMSI6LTYwLCJkZWZfcGl0Y2hfbW9kZSI6Ik9mZiIsImRlZl95YXdfbW9kZSI6Ik9mZiIsImRlZl90aWNrX21vZGUiOiJDdXN0b20iLCJkZWZfeWF3X3NwZWVkIjoyMCwiZGVmX2ZvcmNlIjp0cnVlLCJkZWZfeWF3X2xlZnQiOjAsImRlZl9qaXR0ZXJfZGVsYXlfbWluIjoxLCJkZWZfcGl0Y2hfc3BlZWQiOjIwLCJkZWZfM3dheV9kZWxheSI6MiwiZGVmX3lhd19vZmZzZXQiOjAsImRlZl8zd2F5X2FuZ2xlMyI6NjAsImRlZl9waXRjaF8xIjowLCJkZWZfeWF3X3JpZ2h0IjowLCJkZWZfdGlja19zcGVlZCI6MCwiZGVmX2VuYWJsZSI6ZmFsc2V9LCJNYW51YWwiOnsiZW5hYmxlIjp0cnVlLCJkZWZfM3dheV9hbmdsZTIiOjAsImRlZl9waXRjaF8yIjowLCJkZWZfaml0dGVyX2RlbGF5X21heCI6MywiZGVmXzN3YXlfYW5nbGUxIjotNjAsImRlZl9waXRjaF9tb2RlIjoiT2ZmIiwiZGVmX3lhd19tb2RlIjoiT2ZmIiwiZGVmX3RpY2tfbW9kZSI6IkN1c3RvbSIsImRlZl95YXdfc3BlZWQiOjIwLCJkZWZfZm9yY2UiOnRydWUsImRlZl95YXdfbGVmdCI6MCwiZGVmX2ppdHRlcl9kZWxheV9taW4iOjEsImRlZl9waXRjaF9zcGVlZCI6MjAsImRlZl8zd2F5X2RlbGF5IjoyLCJkZWZfeWF3X29mZnNldCI6MCwiZGVmXzN3YXlfYW5nbGUzIjo2MCwiZGVmX3BpdGNoXzEiOjAsImRlZl95YXdfcmlnaHQiOjAsImRlZl90aWNrX3NwZWVkIjowLCJkZWZfZW5hYmxlIjpmYWxzZX0sIkdsb2JhbCI6eyJkZWZfM3dheV9hbmdsZTIiOjAsImRlZl9waXRjaF8yIjowLCJkZWZfaml0dGVyX2RlbGF5X21pbiI6MSwiZGVmXzN3YXlfYW5nbGUxIjotNjAsImRlZl9waXRjaF9tb2RlIjoiT2ZmIiwiZGVmX3lhd19tb2RlIjoiT2ZmIiwiZGVmX3lhd19yaWdodCI6MCwiZGVmX3lhd19zcGVlZCI6MjAsImRlZl9mb3JjZSI6ZmFsc2UsImRlZl9lbmFibGUiOmZhbHNlLCJkZWZfdGlja19tb2RlIjoiQ3VzdG9tIiwiZGVmX3BpdGNoX3NwZWVkIjoyMCwiZGVmXzN3YXlfZGVsYXkiOjIsImRlZl95YXdfb2Zmc2V0IjowLCJkZWZfM3dheV9hbmdsZTMiOjYwLCJkZWZfcGl0Y2hfMSI6MCwiZGVmX2ppdHRlcl9kZWxheV9tYXgiOjMsImRlZl90aWNrX3NwZWVkIjowLCJkZWZfeWF3X2xlZnQiOjB9LCJGYWtlbGFnIjp7ImVuYWJsZSI6dHJ1ZSwiZGVmXzN3YXlfYW5nbGUyIjowLCJkZWZfcGl0Y2hfMiI6MCwiZGVmX2ppdHRlcl9kZWxheV9tYXgiOjMsImRlZl8zd2F5X2FuZ2xlMSI6LTYwLCJkZWZfcGl0Y2hfbW9kZSI6Ik9mZiIsImRlZl95YXdfbW9kZSI6Ik9mZiIsImRlZl90aWNrX21vZGUiOiJDdXN0b20iLCJkZWZfeWF3X3NwZWVkIjoyMCwiZGVmX2ZvcmNlIjp0cnVlLCJkZWZfeWF3X2xlZnQiOjAsImRlZl9qaXR0ZXJfZGVsYXlfbWluIjoxLCJkZWZfcGl0Y2hfc3BlZWQiOjIwLCJkZWZfM3dheV9kZWxheSI6MiwiZGVmX3lhd19vZmZzZXQiOjAsImRlZl8zd2F5X2FuZ2xlMyI6NjAsImRlZl9waXRjaF8xIjowLCJkZWZfeWF3X3JpZ2h0IjowLCJkZWZfdGlja19zcGVlZCI6MCwiZGVmX2VuYWJsZSI6ZmFsc2V9LCJTYWZlIjp7ImVuYWJsZSI6dHJ1ZSwiZGVmXzN3YXlfYW5nbGUyIjowLCJkZWZfcGl0Y2hfMiI6MCwiZGVmX2ppdHRlcl9kZWxheV9tYXgiOjMsImRlZl8zd2F5X2FuZ2xlMSI6LTYwLCJkZWZfcGl0Y2hfbW9kZSI6Ik9mZiIsImRlZl95YXdfbW9kZSI6Ik9mZiIsImRlZl90aWNrX21vZGUiOiJDdXN0b20iLCJkZWZfeWF3X3NwZWVkIjoyMCwiZGVmX2ZvcmNlIjp0cnVlLCJkZWZfeWF3X2xlZnQiOjAsImRlZl9qaXR0ZXJfZGVsYXlfbWluIjoxLCJkZWZfcGl0Y2hfc3BlZWQiOjIwLCJkZWZfM3dheV9kZWxheSI6MiwiZGVmX3lhd19vZmZzZXQiOjAsImRlZl8zd2F5X2FuZ2xlMyI6NjAsImRlZl9waXRjaF8xIjowLCJkZWZfeWF3X3JpZ2h0IjowLCJkZWZfdGlja19zcGVlZCI6MCwiZGVmX2VuYWJsZSI6ZmFsc2V9LCJjb25kaXRpb24iOiJBaXIiLCJBaXIiOnsiZW5hYmxlIjp0cnVlLCJkZWZfM3dheV9hbmdsZTIiOjAsImRlZl9waXRjaF8yIjowLCJkZWZfaml0dGVyX2RlbGF5X21heCI6MywiZGVmXzN3YXlfYW5nbGUxIjotNjAsImRlZl9waXRjaF9tb2RlIjoiT2ZmIiwiZGVmX3lhd19tb2RlIjoiT2ZmIiwiZGVmX3RpY2tfbW9kZSI6IkN1c3RvbSIsImRlZl95YXdfc3BlZWQiOjIwLCJkZWZfZm9yY2UiOnRydWUsImRlZl95YXdfbGVmdCI6MCwiZGVmX2ppdHRlcl9kZWxheV9taW4iOjEsImRlZl9waXRjaF9zcGVlZCI6MjAsImRlZl8zd2F5X2RlbGF5IjoyLCJkZWZfeWF3X29mZnNldCI6MCwiZGVmXzN3YXlfYW5nbGUzIjo2MCwiZGVmX3BpdGNoXzEiOjAsImRlZl95YXdfcmlnaHQiOjAsImRlZl90aWNrX3NwZWVkIjowLCJkZWZfZW5hYmxlIjpmYWxzZX0sIlNsb3ciOnsiZW5hYmxlIjp0cnVlLCJkZWZfM3dheV9hbmdsZTIiOjAsImRlZl9waXRjaF8yIjo1OSwiZGVmX2ppdHRlcl9kZWxheV9tYXgiOjMsImRlZl8zd2F5X2FuZ2xlMSI6LTYwLCJkZWZfcGl0Y2hfbW9kZSI6IlN3YXkiLCJkZWZfeWF3X21vZGUiOiJTd2F5IiwiZGVmX3RpY2tfbW9kZSI6IkFkYXB0aXZlIiwiZGVmX3lhd19zcGVlZCI6MTMsImRlZl9mb3JjZSI6dHJ1ZSwiZGVmX3lhd19sZWZ0IjoxMDQsImRlZl9qaXR0ZXJfZGVsYXlfbWluIjoxLCJkZWZfcGl0Y2hfc3BlZWQiOjksImRlZl8zd2F5X2RlbGF5IjoyLCJkZWZfeWF3X29mZnNldCI6MCwiZGVmXzN3YXlfYW5nbGUzIjo2MCwiZGVmX3BpdGNoXzEiOi00NCwiZGVmX3lhd19yaWdodCI6OTgsImRlZl90aWNrX3NwZWVkIjoyLCJkZWZfZW5hYmxlIjp0cnVlfSwiQ3JvdWNoIjp7ImVuYWJsZSI6dHJ1ZSwiZGVmXzN3YXlfYW5nbGUyIjowLCJkZWZfcGl0Y2hfMiI6MCwiZGVmX2ppdHRlcl9kZWxheV9tYXgiOjMsImRlZl8zd2F5X2FuZ2xlMSI6LTYwLCJkZWZfcGl0Y2hfbW9kZSI6Ik9mZiIsImRlZl95YXdfbW9kZSI6Ik9mZiIsImRlZl90aWNrX21vZGUiOiJDdXN0b20iLCJkZWZfeWF3X3NwZWVkIjoyMCwiZGVmX2ZvcmNlIjp0cnVlLCJkZWZfeWF3X2xlZnQiOjAsImRlZl9qaXR0ZXJfZGVsYXlfbWluIjoxLCJkZWZfcGl0Y2hfc3BlZWQiOjIwLCJkZWZfM3dheV9kZWxheSI6MiwiZGVmX3lhd19vZmZzZXQiOjAsImRlZl8zd2F5X2FuZ2xlMyI6NjAsImRlZl9waXRjaF8xIjowLCJkZWZfeWF3X3JpZ2h0IjowLCJkZWZfdGlja19zcGVlZCI6MCwiZGVmX2VuYWJsZSI6ZmFsc2V9LCJDLUFpciI6eyJlbmFibGUiOnRydWUsImRlZl8zd2F5X2FuZ2xlMiI6MCwiZGVmX3BpdGNoXzIiOjAsImRlZl9qaXR0ZXJfZGVsYXlfbWF4IjozLCJkZWZfM3dheV9hbmdsZTEiOi02MCwiZGVmX3BpdGNoX21vZGUiOiJPZmYiLCJkZWZfeWF3X21vZGUiOiJPZmYiLCJkZWZfdGlja19tb2RlIjoiQ3VzdG9tIiwiZGVmX3lhd19zcGVlZCI6MjAsImRlZl9mb3JjZSI6dHJ1ZSwiZGVmX3lhd19sZWZ0IjowLCJkZWZfaml0dGVyX2RlbGF5X21pbiI6MSwiZGVmX3BpdGNoX3NwZWVkIjoyMCwiZGVmXzN3YXlfZGVsYXkiOjIsImRlZl95YXdfb2Zmc2V0IjowLCJkZWZfM3dheV9hbmdsZTMiOjYwLCJkZWZfcGl0Y2hfMSI6MCwiZGVmX3lhd19yaWdodCI6MCwiZGVmX3RpY2tfc3BlZWQiOjAsImRlZl9lbmFibGUiOmZhbHNlfSwiQy1Nb3ZlIjp7ImVuYWJsZSI6dHJ1ZSwiZGVmXzN3YXlfYW5nbGUyIjowLCJkZWZfcGl0Y2hfMiI6MCwiZGVmX2ppdHRlcl9kZWxheV9tYXgiOjMsImRlZl8zd2F5X2FuZ2xlMSI6LTYwLCJkZWZfcGl0Y2hfbW9kZSI6Ik9mZiIsImRlZl95YXdfbW9kZSI6Ik9mZiIsImRlZl90aWNrX21vZGUiOiJDdXN0b20iLCJkZWZfeWF3X3NwZWVkIjoyMCwiZGVmX2ZvcmNlIjp0cnVlLCJkZWZfeWF3X2xlZnQiOjAsImRlZl9qaXR0ZXJfZGVsYXlfbWluIjoxLCJkZWZfcGl0Y2hfc3BlZWQiOjIwLCJkZWZfM3dheV9kZWxheSI6MiwiZGVmX3lhd19vZmZzZXQiOjAsImRlZl8zd2F5X2FuZ2xlMyI6NjAsImRlZl9waXRjaF8xIjowLCJkZWZfeWF3X3JpZ2h0IjowLCJkZWZfdGlja19zcGVlZCI6MCwiZGVmX2VuYWJsZSI6ZmFsc2V9LCJGcmVlc3RhbmQiOnsiZW5hYmxlIjp0cnVlLCJkZWZfM3dheV9hbmdsZTIiOjAsImRlZl9waXRjaF8yIjowLCJkZWZfaml0dGVyX2RlbGF5X21heCI6MywiZGVmXzN3YXlfYW5nbGUxIjotNjAsImRlZl9waXRjaF9tb2RlIjoiT2ZmIiwiZGVmX3lhd19tb2RlIjoiT2ZmIiwiZGVmX3RpY2tfbW9kZSI6IkN1c3RvbSIsImRlZl95YXdfc3BlZWQiOjIwLCJkZWZfZm9yY2UiOnRydWUsImRlZl95YXdfbGVmdCI6MCwiZGVmX2ppdHRlcl9kZWxheV9taW4iOjEsImRlZl9waXRjaF9zcGVlZCI6MjAsImRlZl8zd2F5X2RlbGF5IjoyLCJkZWZfeWF3X29mZnNldCI6MCwiZGVmXzN3YXlfYW5nbGUzIjo2MCwiZGVmX3BpdGNoXzEiOjAsImRlZl95YXdfcmlnaHQiOjAsImRlZl90aWNrX3NwZWVkIjowLCJkZWZfZW5hYmxlIjpmYWxzZX19LCJjb25maWciOnsibGlzdCI6MSwibmFtZSI6IjExMTEifX19"
+local DEFAULT_CONFIG = "eyJidWlsZGVyIjp7IkNyb3VjaCI6eyJlbmFibGUiOnRydWUsImRlc3luY194d2F5X3N0ZXBzIjpbMCwwLDAsMCwwLDAsMCwwXSwiZGVzeW5jX3h3YXlfdmFyaWFuY2UiOjIsImRlc3luY190eXBlIjoiTFwvUiIsInlhd19iYXNlX2RlZ3JlZXMiOjMsImRlc3luY194d2F5X2NvdW50IjozLCJkZXN5bmNfcmFuZG9taXphdGlvbiI6NSwiYm9keV95YXdfdmFyaWFuY2VfZGVsYXkiOjIsInRpbWluZ190aWNrX2RlbGF5IjoyLCJkZXN5bmNfeHdheV9kZWxheSI6MywieWF3X2Jhc2VfcmFuZG9taXplIjozLCJib2R5X3lhd19qaXR0ZXJfcmlnaHQiOjQ3LCJib2R5X3lhd19qaXR0ZXJfbGVmdCI6NTIsImJvZHlfeWF3X2ppdHRlcl92YXJpYW5jZSI6MTcsImJvZHlfeWF3X21vZGUiOiJKaXR0ZXIiLCJ0aW1pbmdfdGlja192YXJpYW5jZSI6MjYsImJvZHlfeWF3X2RlZ3JlZXMiOjAsImRlc3luY19sZWZ0X2xpbWl0IjotMzIsImRlc3luY19yaWdodF9saW1pdCI6NDAsImJvZHlfeWF3X2RlbGF5X3ZhcmlhbmNlIjo1OX0sIlVzZSI6eyJlbmFibGUiOnRydWUsImRlc3luY194d2F5X3N0ZXBzIjpbMCwwLDAsMCwwLDAsMCwwXSwiZGVzeW5jX3h3YXlfdmFyaWFuY2UiOjIsImRlc3luY190eXBlIjoiTFwvUiIsInlhd19iYXNlX2RlZ3JlZXMiOjAsImRlc3luY194d2F5X2NvdW50IjozLCJkZXN5bmNfcmFuZG9taXphdGlvbiI6NCwiYm9keV95YXdfdmFyaWFuY2VfZGVsYXkiOjMsInRpbWluZ190aWNrX2RlbGF5Ijo0LCJkZXN5bmNfeHdheV9kZWxheSI6MywieWF3X2Jhc2VfcmFuZG9taXplIjowLCJib2R5X3lhd19qaXR0ZXJfcmlnaHQiOjQ4LCJib2R5X3lhd19qaXR0ZXJfbGVmdCI6NTEsImJvZHlfeWF3X2ppdHRlcl92YXJpYW5jZSI6MCwiYm9keV95YXdfbW9kZSI6IkppdHRlciIsInRpbWluZ190aWNrX3ZhcmlhbmNlIjowLCJib2R5X3lhd19kZWdyZWVzIjowLCJkZXN5bmNfbGVmdF9saW1pdCI6LTMyLCJkZXN5bmNfcmlnaHRfbGltaXQiOjM2LCJib2R5X3lhd19kZWxheV92YXJpYW5jZSI6MH0sIlN0YW5kIjp7ImVuYWJsZSI6dHJ1ZSwiZGVzeW5jX3h3YXlfc3RlcHMiOlswLDAsMCwwLDAsMCwwLDBdLCJkZXN5bmNfeHdheV92YXJpYW5jZSI6MiwiZGVzeW5jX3R5cGUiOiJMXC9SIiwieWF3X2Jhc2VfZGVncmVlcyI6MSwiZGVzeW5jX3h3YXlfY291bnQiOjMsImRlc3luY19yYW5kb21pemF0aW9uIjo1LCJib2R5X3lhd192YXJpYW5jZV9kZWxheSI6MSwidGltaW5nX3RpY2tfZGVsYXkiOjIsImRlc3luY194d2F5X2RlbGF5IjozLCJ5YXdfYmFzZV9yYW5kb21pemUiOjQsImJvZHlfeWF3X2ppdHRlcl9yaWdodCI6NDcsImJvZHlfeWF3X2ppdHRlcl9sZWZ0Ijo1MiwiYm9keV95YXdfaml0dGVyX3ZhcmlhbmNlIjoxOCwiYm9keV95YXdfbW9kZSI6IkppdHRlciIsInRpbWluZ190aWNrX3ZhcmlhbmNlIjoyOCwiYm9keV95YXdfZGVncmVlcyI6MCwiZGVzeW5jX2xlZnRfbGltaXQiOi0yOCwiZGVzeW5jX3JpZ2h0X2xpbWl0IjozMiwiYm9keV95YXdfZGVsYXlfdmFyaWFuY2UiOjMyfSwiRnJlZXN0YW5kIjp7ImVuYWJsZSI6dHJ1ZSwiZGVzeW5jX3h3YXlfc3RlcHMiOlswLDAsMCwwLDAsMCwwLDBdLCJkZXN5bmNfeHdheV92YXJpYW5jZSI6MiwiZGVzeW5jX3R5cGUiOiJMXC9SIiwieWF3X2Jhc2VfZGVncmVlcyI6MCwiZGVzeW5jX3h3YXlfY291bnQiOjMsImRlc3luY19yYW5kb21pemF0aW9uIjozLCJib2R5X3lhd192YXJpYW5jZV9kZWxheSI6MiwidGltaW5nX3RpY2tfZGVsYXkiOjIsImRlc3luY194d2F5X2RlbGF5IjozLCJ5YXdfYmFzZV9yYW5kb21pemUiOjUsImJvZHlfeWF3X2ppdHRlcl9yaWdodCI6NTksImJvZHlfeWF3X2ppdHRlcl9sZWZ0IjowLCJib2R5X3lhd19qaXR0ZXJfdmFyaWFuY2UiOjAsImJvZHlfeWF3X21vZGUiOiJKaXR0ZXIiLCJ0aW1pbmdfdGlja192YXJpYW5jZSI6MzgsImJvZHlfeWF3X2RlZ3JlZXMiOjAsImRlc3luY19sZWZ0X2xpbWl0IjotMTAsImRlc3luY19yaWdodF9saW1pdCI6OCwiYm9keV95YXdfZGVsYXlfdmFyaWFuY2UiOjF9LCJGYWtlbGFnIjp7ImVuYWJsZSI6dHJ1ZSwiZGVzeW5jX3h3YXlfc3RlcHMiOlswLDAsMCwwLDAsMCwwLDBdLCJkZXN5bmNfeHdheV92YXJpYW5jZSI6MiwiZGVzeW5jX3R5cGUiOiJMXC9SIiwieWF3X2Jhc2VfZGVncmVlcyI6MCwiZGVzeW5jX3h3YXlfY291bnQiOjMsImRlc3luY19yYW5kb21pemF0aW9uIjo3LCJib2R5X3lhd192YXJpYW5jZV9kZWxheSI6MywidGltaW5nX3RpY2tfZGVsYXkiOjIsImRlc3luY194d2F5X2RlbGF5IjozLCJ5YXdfYmFzZV9yYW5kb21pemUiOjMsImJvZHlfeWF3X2ppdHRlcl9yaWdodCI6MzAsImJvZHlfeWF3X2ppdHRlcl9sZWZ0IjozMCwiYm9keV95YXdfaml0dGVyX3ZhcmlhbmNlIjowLCJib2R5X3lhd19tb2RlIjoiU3RhdGljIiwidGltaW5nX3RpY2tfdmFyaWFuY2UiOjYyLCJib2R5X3lhd19kZWdyZWVzIjotMTAsImRlc3luY19sZWZ0X2xpbWl0IjotMiwiZGVzeW5jX3JpZ2h0X2xpbWl0IjoxLCJib2R5X3lhd19kZWxheV92YXJpYW5jZSI6MH0sIlNhZmUiOnsiZW5hYmxlIjp0cnVlLCJkZXN5bmNfeHdheV9zdGVwcyI6WzAsMCwwLDAsMCwwLDAsMF0sImRlc3luY194d2F5X3ZhcmlhbmNlIjoyLCJkZXN5bmNfdHlwZSI6IkxcL1IiLCJ5YXdfYmFzZV9kZWdyZWVzIjozLCJkZXN5bmNfeHdheV9jb3VudCI6MywiZGVzeW5jX3JhbmRvbWl6YXRpb24iOjUsImJvZHlfeWF3X3ZhcmlhbmNlX2RlbGF5IjoxLCJ0aW1pbmdfdGlja19kZWxheSI6MiwiZGVzeW5jX3h3YXlfZGVsYXkiOjMsInlhd19iYXNlX3JhbmRvbWl6ZSI6MywiYm9keV95YXdfaml0dGVyX3JpZ2h0Ijo1NCwiYm9keV95YXdfaml0dGVyX2xlZnQiOjQ3LCJib2R5X3lhd19qaXR0ZXJfdmFyaWFuY2UiOjIwLCJib2R5X3lhd19tb2RlIjoiSml0dGVyIiwidGltaW5nX3RpY2tfdmFyaWFuY2UiOjQ0LCJib2R5X3lhd19kZWdyZWVzIjowLCJkZXN5bmNfbGVmdF9saW1pdCI6LTI5LCJkZXN5bmNfcmlnaHRfbGltaXQiOjMxLCJib2R5X3lhd19kZWxheV92YXJpYW5jZSI6NH0sIk1hbnVhbCI6eyJlbmFibGUiOnRydWUsImRlc3luY194d2F5X3N0ZXBzIjpbMCwwLDAsMCwwLDAsMCwwXSwiZGVzeW5jX3h3YXlfdmFyaWFuY2UiOjIsImRlc3luY190eXBlIjoiTFwvUiIsInlhd19iYXNlX2RlZ3JlZXMiOjAsImRlc3luY194d2F5X2NvdW50IjozLCJkZXN5bmNfcmFuZG9taXphdGlvbiI6NCwiYm9keV95YXdfdmFyaWFuY2VfZGVsYXkiOjMsInRpbWluZ190aWNrX2RlbGF5IjozLCJkZXN5bmNfeHdheV9kZWxheSI6MywieWF3X2Jhc2VfcmFuZG9taXplIjo1LCJib2R5X3lhd19qaXR0ZXJfcmlnaHQiOjU2LCJib2R5X3lhd19qaXR0ZXJfbGVmdCI6NDksImJvZHlfeWF3X2ppdHRlcl92YXJpYW5jZSI6NSwiYm9keV95YXdfbW9kZSI6IkppdHRlciIsInRpbWluZ190aWNrX3ZhcmlhbmNlIjo3NCwiYm9keV95YXdfZGVncmVlcyI6MCwiZGVzeW5jX2xlZnRfbGltaXQiOi0zMSwiZGVzeW5jX3JpZ2h0X2xpbWl0IjozMSwiYm9keV95YXdfZGVsYXlfdmFyaWFuY2UiOjV9LCJHbG9iYWwiOnsiYm9keV95YXdfZGVncmVlcyI6MCwiZGVzeW5jX3h3YXlfc3RlcHMiOlswLDAsMCwwLDAsMCwwLDBdLCJkZXN5bmNfeHdheV92YXJpYW5jZSI6MiwiZGVzeW5jX3R5cGUiOiJEaXNhYmxlZCIsInlhd19iYXNlX2RlZ3JlZXMiOjAsImRlc3luY194d2F5X2NvdW50IjozLCJkZXN5bmNfcmFuZG9taXphdGlvbiI6MCwiYm9keV95YXdfdmFyaWFuY2VfZGVsYXkiOjMsInRpbWluZ190aWNrX2RlbGF5IjozLCJkZXN5bmNfeHdheV9kZWxheSI6MywieWF3X2Jhc2VfcmFuZG9taXplIjowLCJib2R5X3lhd19qaXR0ZXJfcmlnaHQiOjMwLCJib2R5X3lhd19qaXR0ZXJfbGVmdCI6MzAsImJvZHlfeWF3X2ppdHRlcl92YXJpYW5jZSI6MCwiYm9keV95YXdfbW9kZSI6IkRpc2FibGVkIiwidGltaW5nX3RpY2tfdmFyaWFuY2UiOjAsImRlc3luY19sZWZ0X2xpbWl0IjowLCJkZXN5bmNfcmlnaHRfbGltaXQiOjAsImJvZHlfeWF3X2RlbGF5X3ZhcmlhbmNlIjowfSwiTW92ZSI6eyJlbmFibGUiOnRydWUsImRlc3luY194d2F5X3N0ZXBzIjpbMCwwLDAsMCwwLDAsMCwwXSwiZGVzeW5jX3h3YXlfdmFyaWFuY2UiOjIsImRlc3luY190eXBlIjoiTFwvUiIsInlhd19iYXNlX2RlZ3JlZXMiOjAsImRlc3luY194d2F5X2NvdW50IjozLCJkZXN5bmNfcmFuZG9taXphdGlvbiI6NiwiYm9keV95YXdfdmFyaWFuY2VfZGVsYXkiOjMsInRpbWluZ190aWNrX2RlbGF5IjoyLCJkZXN5bmNfeHdheV9kZWxheSI6MywieWF3X2Jhc2VfcmFuZG9taXplIjoxLCJib2R5X3lhd19qaXR0ZXJfcmlnaHQiOjQ2LCJib2R5X3lhd19qaXR0ZXJfbGVmdCI6NTQsImJvZHlfeWF3X2ppdHRlcl92YXJpYW5jZSI6MTcsImJvZHlfeWF3X21vZGUiOiJKaXR0ZXIiLCJ0aW1pbmdfdGlja192YXJpYW5jZSI6NDEsImJvZHlfeWF3X2RlZ3JlZXMiOjAsImRlc3luY19sZWZ0X2xpbWl0IjotMzcsImRlc3luY19yaWdodF9saW1pdCI6NDAsImJvZHlfeWF3X2RlbGF5X3ZhcmlhbmNlIjo1NH0sIkFpciI6eyJlbmFibGUiOnRydWUsImRlc3luY194d2F5X3N0ZXBzIjpbMCwwLDAsMCwwLDAsMCwwXSwiZGVzeW5jX3h3YXlfdmFyaWFuY2UiOjIsImRlc3luY190eXBlIjoiTFwvUiIsInlhd19iYXNlX2RlZ3JlZXMiOjAsImRlc3luY194d2F5X2NvdW50IjozLCJkZXN5bmNfcmFuZG9taXphdGlvbiI6NywiYm9keV95YXdfdmFyaWFuY2VfZGVsYXkiOjEsInRpbWluZ190aWNrX2RlbGF5IjoyLCJkZXN5bmNfeHdheV9kZWxheSI6MywieWF3X2Jhc2VfcmFuZG9taXplIjo1LCJib2R5X3lhd19qaXR0ZXJfcmlnaHQiOjQ4LCJib2R5X3lhd19qaXR0ZXJfbGVmdCI6NTAsImJvZHlfeWF3X2ppdHRlcl92YXJpYW5jZSI6MjAsImJvZHlfeWF3X21vZGUiOiJKaXR0ZXIiLCJ0aW1pbmdfdGlja192YXJpYW5jZSI6MzksImJvZHlfeWF3X2RlZ3JlZXMiOjAsImRlc3luY19sZWZ0X2xpbWl0IjotMjksImRlc3luY19yaWdodF9saW1pdCI6MzMsImJvZHlfeWF3X2RlbGF5X3ZhcmlhbmNlIjozN30sIkMtQWlyIjp7ImVuYWJsZSI6dHJ1ZSwiZGVzeW5jX3h3YXlfc3RlcHMiOlswLDAsMCwwLDAsMCwwLDBdLCJkZXN5bmNfeHdheV92YXJpYW5jZSI6MiwiZGVzeW5jX3R5cGUiOiJMXC9SIiwieWF3X2Jhc2VfZGVncmVlcyI6MywiZGVzeW5jX3h3YXlfY291bnQiOjMsImRlc3luY19yYW5kb21pemF0aW9uIjo1LCJib2R5X3lhd192YXJpYW5jZV9kZWxheSI6MywidGltaW5nX3RpY2tfZGVsYXkiOjIsImRlc3luY194d2F5X2RlbGF5IjozLCJ5YXdfYmFzZV9yYW5kb21pemUiOjQsImJvZHlfeWF3X2ppdHRlcl9yaWdodCI6NTQsImJvZHlfeWF3X2ppdHRlcl9sZWZ0Ijo0OSwiYm9keV95YXdfaml0dGVyX3ZhcmlhbmNlIjo0LCJib2R5X3lhd19tb2RlIjoiSml0dGVyIiwidGltaW5nX3RpY2tfdmFyaWFuY2UiOjAsImJvZHlfeWF3X2RlZ3JlZXMiOjAsImRlc3luY19sZWZ0X2xpbWl0IjotMjksImRlc3luY19yaWdodF9saW1pdCI6MzEsImJvZHlfeWF3X2RlbGF5X3ZhcmlhbmNlIjowfSwiQy1Nb3ZlIjp7ImVuYWJsZSI6dHJ1ZSwiZGVzeW5jX3h3YXlfc3RlcHMiOlswLDAsMCwwLDAsMCwwLDBdLCJkZXN5bmNfeHdheV92YXJpYW5jZSI6MiwiZGVzeW5jX3R5cGUiOiJMXC9SIiwieWF3X2Jhc2VfZGVncmVlcyI6MywiZGVzeW5jX3h3YXlfY291bnQiOjMsImRlc3luY19yYW5kb21pemF0aW9uIjo1LCJib2R5X3lhd192YXJpYW5jZV9kZWxheSI6MiwidGltaW5nX3RpY2tfZGVsYXkiOjIsImRlc3luY194d2F5X2RlbGF5IjozLCJ5YXdfYmFzZV9yYW5kb21pemUiOjIsImJvZHlfeWF3X2ppdHRlcl9yaWdodCI6NTUsImJvZHlfeWF3X2ppdHRlcl9sZWZ0Ijo0NywiYm9keV95YXdfaml0dGVyX3ZhcmlhbmNlIjoyMCwiYm9keV95YXdfbW9kZSI6IkppdHRlciIsInRpbWluZ190aWNrX3ZhcmlhbmNlIjowLCJib2R5X3lhd19kZWdyZWVzIjowLCJkZXN5bmNfbGVmdF9saW1pdCI6LTI5LCJkZXN5bmNfcmlnaHRfbGltaXQiOjMxLCJib2R5X3lhd19kZWxheV92YXJpYW5jZSI6NDR9LCJTbG93Ijp7ImVuYWJsZSI6dHJ1ZSwiZGVzeW5jX3h3YXlfc3RlcHMiOlswLDAsMCwwLDAsMCwwLDBdLCJkZXN5bmNfeHdheV92YXJpYW5jZSI6MiwiZGVzeW5jX3R5cGUiOiJMXC9SIiwieWF3X2Jhc2VfZGVncmVlcyI6MCwiZGVzeW5jX3h3YXlfY291bnQiOjMsImRlc3luY19yYW5kb21pemF0aW9uIjo3LCJib2R5X3lhd192YXJpYW5jZV9kZWxheSI6MywidGltaW5nX3RpY2tfZGVsYXkiOjEsImRlc3luY194d2F5X2RlbGF5IjozLCJ5YXdfYmFzZV9yYW5kb21pemUiOjIsImJvZHlfeWF3X2ppdHRlcl9yaWdodCI6MzAsImJvZHlfeWF3X2ppdHRlcl9sZWZ0IjozMCwiYm9keV95YXdfaml0dGVyX3ZhcmlhbmNlIjowLCJib2R5X3lhd19tb2RlIjoiU3RhdGljIiwidGltaW5nX3RpY2tfdmFyaWFuY2UiOjc0LCJib2R5X3lhd19kZWdyZWVzIjotMTAsImRlc3luY19sZWZ0X2xpbWl0IjotMSwiZGVzeW5jX3JpZ2h0X2xpbWl0IjoxLCJib2R5X3lhd19kZWxheV92YXJpYW5jZSI6MH19LCJjb25maWciOnsibWFudWFsX2FhX2hvdGtleSI6eyJtYW51YWxfYmFjayI6WzIsODgsIn4iXSwibWFudWFsX2xlZnQiOlsyLDkwLCJ+Il0sIm1hbnVhbF9yaWdodCI6WzIsNjcsIn4iXSwibWFudWFsX2ZvcndhcmQiOlsyLDAsIn4iXX0sInRhYiI6Iu6HgSBDb25maWciLCJ2aXN1YWwiOnsiZ3JlbmFkZV9tb2xvdG92Ijp0cnVlLCJ6ZXVzX3dhcm5pbmciOnRydWUsImhvdGtleXNfZW5hYmxlZCI6dHJ1ZSwiZGFtYWdlX2luZGljYXRvciI6dHJ1ZSwiYXNwZWN0X3JhdGlvX2VuYWJsZWQiOnRydWUsImtuaWZlX3Bvc2l0aW9uaW5nIjoiLSIsImNyb3NzaGFpcl9lbmFibGVkIjpmYWxzZSwid2F0ZXJtYXJrX2NvbG9yIjoiIzQyQjhGRkZGIiwidmlld21vZGVsX3giOjc2MSwibG9nc19lbmFibGVkIjp0cnVlLCJzcGVjdGF0b3JzX2NvbG9yIjoiIzQyQjhGRkZGIiwic3BlY3RhdG9yc19lbmFibGVkIjpmYWxzZSwidmlld21vZGVsX2VuYWJsZWQiOnRydWUsImdyZW5hZGVfbW9sb3Rvdl9jb2xvciI6IiNDMUMxQzEzMiIsInZpZXdtb2RlbF9yb2xsIjowLCJ2aWV3bW9kZWxfeiI6LTE1NzMsImNyb3NzaGFpcl90ZXh0X2NvbG9yIjoiI0ZGRkZGRkZGIiwibG9nc19vZmZzZXQiOjUwMCwiZ3JlbmFkZV90cmFpbF9mYWRlIjozMCwibG9nc19jb2xvcl9taXNzIjoiI0ZGN0Q5NkZGIiwibG9nc19kdXJhdGlvbiI6MzAsImdyZW5hZGVfc21va2UiOnRydWUsImdyZW5hZGVfc21va2VfY29sb3IiOiIjQzFDMUMxMzIiLCJsb2dzX3NlbGVjdCI6WyJOb3RpZnkiLCJTY3JlZW4iLCJDb25zb2xlIiwifiJdLCJ3YXRlcm1hcmtfZW5hYmxlZCI6dHJ1ZSwiZ3JlbmFkZV90cmFpbF90aGlja25lc3MiOjEsImdyZW5hZGVfcmFkaXVzIjp0cnVlLCJncmVuYWRlX3RyYWlsX2NvbG9yIjoiIzgzOEJBM0ZBIiwiaG90a2V5c19jb2xvciI6IiM0MkI4RkZGRiIsImxvZ3NfY29sb3JfaGl0IjoiI0E0QjJGMUZGIiwiZ3JlbmFkZV90cmFpbCI6dHJ1ZSwiZ3JlbmFkZV9yYWRpdXNfZGlzcGxheSI6WyJUZXh0IiwifiJdLCJncmVuYWRlX3RyYWlsX2dsb3ciOjEzLCJ2aXN1YWxfY2F0ZWdvcnkiOiJFZmZlY3RzIiwic2NvcGVfbGluZXNfY29sb3IiOiIjQTdCOUMwRkYiLCJjcm9zc2hhaXJfZ2xvd19jb2xvciI6IiNBNEIyRjFGRiIsInRoaXJkcGVyc29uX2NvbGxpc2lvbiI6dHJ1ZSwidmlld21vZGVsX2ZvdiI6LTE4NzgsImFzcGVjdF9yYXRpbyI6MTM2LCJzY29wZV9saW5lc19vZmZzZXQiOjE0Mywic2NvcGVfbGluZXMiOnRydWUsInZpZXdtb2RlbF95IjotMTM3MCwidGhpcmRwZXJzb25fZGlzdGFuY2UiOjUwfSwibWlzYyI6eyJlYXJ0aHF1YWtlX2ludGVuc2l0eSI6MTAwLCJhdXRvYnV5X3NlY29uZGFyeSI6IkNaNzVcL1RlYzlcL0ZpdmVTZXZlbiIsImFuaW1hdGlvbl9ncm91bmQiOiJNb29ud2FsayIsImFuaW1hdGlvbl9icmVha2VyIjp0cnVlLCJjaGF0X3NwYW1tZXIiOmZhbHNlLCJhdXRvYnV5X3V0aWxpdGllcyI6WyJBcm1vciIsIkhlbG1ldCIsIlpldXMiLCJEZWZ1c2VyIiwifiJdLCJib2R5X2xlYW4iOjAsImF1dG9idXlfcHJpbWFyeSI6IlNjb3V0IiwicGl0Y2hfb25fbGFuZCI6ZmFsc2UsImF1dG9idXlfZ3JlbmFkZXMiOlsiTW9sb3RvdiIsIlNtb2tlIiwiRmxhc2giLCJ+Il0sImVhcnRocXVha2UiOmZhbHNlLCJjbGFudGFnIjpmYWxzZSwiY2xhbnRhZ190ZXh0IjoiIiwiYXV0b2J1eV9lbmFibGVkIjp0cnVlLCJhbmltYXRpb25fYWlyIjoiU3RhdGljIn0sImFudGlhaW0iOnsibWFudWFsX2JhY2siOlsyLDg4LCJ+Il0sIm1hbnVhbF9sZWZ0IjpbMiw5MCwifiJdLCJhYV9tb2RlIjoiQnVpbGRlciIsInNhZmVfaGVhZF90cmlnZ2VycyI6WyJLbmlmZSIsIlpldXMiLCJ+Il0sIm1hbnVhbF9yaWdodCI6WzIsNjcsIn4iXSwibWFudWFsX2ZvcndhcmQiOlsyLDAsIn4iXSwiY29uZGl0aW9uIjoiTW92ZSIsImZyZWVzdGFuZGluZyI6WzEsNSwifiJdLCJ1dGlsaXRpZXMiOlsiQXZvaWQgQmFja3N0YWIiLCJBbnRpLUFpbSBPbiBVc2UiLCJBdXRvIER1Y2sgaW4gQWlyIiwiRmFrZWR1Y2sgRWRnZSIsIkZhc3QgTGFkZGVyIiwifiJdLCJzYWZlX2hlYWQiOnRydWUsImVkZ2VfeWF3IjpbMSwwLCJ+Il19LCJyYWdlYm90Ijp7ImZha2VsYWdfbW9kZSI6IkN5Y2xlIiwicGVla2JvdF9yYW5nZSI6NTQsImZha2VsYWdfZW5hYmxlZCI6dHJ1ZSwiYWlyX3N0b3BfcmFuZ2UiOjM2MSwiaGlkZXNob3RzX3dlYXBvbnMiOlsiQVdQIiwiU2NvdXQiLCJ+Il0sImhpZGVzaG90c19lbmFibGVkIjp0cnVlLCJsZXRoYWxfZW5hYmxlZCI6dHJ1ZSwicGVla2JvdF90ZWxlcG9ydCI6WzEsMCwifiJdLCJhaXJfc3RvcF9tdWx0aV9oaXRib3giOnRydWUsInJlc2V0X2Zha2VsYWdfb25fc2hvdCI6dHJ1ZSwiZmFrZWxhZ19zdGVwIjo5LCJkb3JtYW50X2FpbWJvdCI6dHJ1ZSwidW5zYWZlX2NoYXJnZSI6dHJ1ZSwiaGlkZXNob3RzX3N0YXRlcyI6WyJDcm91Y2giLCJDLU1vdmUiLCJTbG93IiwifiJdLCJsZXRoYWxfc2FmZV9wb2ludCI6dHJ1ZSwiZmFrZWxhZ19taW4iOjEyLCJmYWtlbGFnX2Rpc2FibGVfZXhwbG9pdCI6dHJ1ZSwibGV0aGFsX2F1dG9fZGFtYWdlIjp0cnVlLCJsZXRoYWxfaHBfdGhyZXNob2xkIjo3NSwibGV0aGFsX2F1dG9fYmFpbSI6dHJ1ZSwicGVla2JvdF9lbmFibGVkIjpbMSw1LCJ+Il0sImZha2VsYWdfbGltaXQiOjE0LCJmYWtlbGFnX21heCI6MTQsImFpcl9zdG9wX2VuYWJsZWQiOnRydWV9LCJkZWZlbnNpdmUiOnsiTW92ZSI6eyJlbmFibGUiOnRydWUsImRlZl95YXdfY2xvY2tfaml0dGVyIjoxNSwiZGVmX3BpdGNoXzIiOjg5LCJkZWZfcGl0Y2hfc3RhdGljIjo4OSwiZGVmX2VuYWJsZSI6ZmFsc2UsImRlZl9waXRjaF9tb2RlIjoiT2ZmIiwiZGVmX3RpY2tfbWF4IjoxNCwiZGVmX3lhd19jeWNsZV9pbnZlcnQiOmZhbHNlLCJkZWZfeWF3X21pbiI6LTkwLCJkZWZfcGl0Y2hfd2F2ZV90eXBlIjoiU2luZSIsImRlZl90aWNrX21pbiI6MSwiZGVmX3lhd19zcGVlZCI6MjAsImRlZl9mb3JjZSI6dHJ1ZSwiZGVmX3lhd19zdGF0aWMiOjAsImRlZl9waXRjaF9qaXR0ZXJfZGVsYXkiOjIsImRlZl90aWNrX2N5Y2xlX3NwZWVkIjoxMCwiZGVmX3BpdGNoX3dhdmVfcGVyaW9kIjozMCwiZGVmX3BpdGNoX3NwZWVkIjoyMCwiZGVmX3lhd19jbG9ja19zdGVwIjozMCwiZGVmX3lhd19qaXR0ZXJfZGVsYXkiOjIsImRlZl95YXdfbWF4Ijo5MCwiZGVmX3BpdGNoXzEiOi04OSwiZGVmX3lhd19tb2RlIjoiT2ZmIiwiZGVmX3RpY2tfc3BlZWQiOjAsImRlZl90aWNrX21vZGUiOiJTdGF0aWMifSwiVXNlIjp7ImVuYWJsZSI6dHJ1ZSwiZGVmX3lhd19jbG9ja19qaXR0ZXIiOjE1LCJkZWZfcGl0Y2hfMiI6ODksImRlZl9waXRjaF9zdGF0aWMiOjg5LCJkZWZfZW5hYmxlIjpmYWxzZSwiZGVmX3BpdGNoX21vZGUiOiJPZmYiLCJkZWZfdGlja19tYXgiOjE0LCJkZWZfeWF3X2N5Y2xlX2ludmVydCI6ZmFsc2UsImRlZl95YXdfbWluIjotOTAsImRlZl9waXRjaF93YXZlX3R5cGUiOiJTaW5lIiwiZGVmX3RpY2tfbWluIjoxLCJkZWZfeWF3X3NwZWVkIjoyMCwiZGVmX2ZvcmNlIjp0cnVlLCJkZWZfeWF3X3N0YXRpYyI6MCwiZGVmX3BpdGNoX2ppdHRlcl9kZWxheSI6MiwiZGVmX3RpY2tfY3ljbGVfc3BlZWQiOjEwLCJkZWZfcGl0Y2hfd2F2ZV9wZXJpb2QiOjMwLCJkZWZfcGl0Y2hfc3BlZWQiOjIwLCJkZWZfeWF3X2Nsb2NrX3N0ZXAiOjMwLCJkZWZfeWF3X2ppdHRlcl9kZWxheSI6MiwiZGVmX3lhd19tYXgiOjkwLCJkZWZfcGl0Y2hfMSI6LTg5LCJkZWZfeWF3X21vZGUiOiJPZmYiLCJkZWZfdGlja19zcGVlZCI6MCwiZGVmX3RpY2tfbW9kZSI6IlN0YXRpYyJ9LCJTdGFuZCI6eyJlbmFibGUiOnRydWUsImRlZl95YXdfY2xvY2tfaml0dGVyIjoxNSwiZGVmX3BpdGNoXzIiOjg5LCJkZWZfcGl0Y2hfc3RhdGljIjo4OSwiZGVmX2VuYWJsZSI6ZmFsc2UsImRlZl9waXRjaF9tb2RlIjoiT2ZmIiwiZGVmX3RpY2tfbWF4IjoxNCwiZGVmX3lhd19jeWNsZV9pbnZlcnQiOmZhbHNlLCJkZWZfeWF3X21pbiI6LTkwLCJkZWZfcGl0Y2hfd2F2ZV90eXBlIjoiU2luZSIsImRlZl90aWNrX21pbiI6MSwiZGVmX3lhd19zcGVlZCI6MjAsImRlZl9mb3JjZSI6dHJ1ZSwiZGVmX3lhd19zdGF0aWMiOjAsImRlZl9waXRjaF9qaXR0ZXJfZGVsYXkiOjIsImRlZl90aWNrX2N5Y2xlX3NwZWVkIjoxMCwiZGVmX3BpdGNoX3dhdmVfcGVyaW9kIjozMCwiZGVmX3BpdGNoX3NwZWVkIjoyMCwiZGVmX3lhd19jbG9ja19zdGVwIjozMCwiZGVmX3lhd19qaXR0ZXJfZGVsYXkiOjIsImRlZl95YXdfbWF4Ijo5MCwiZGVmX3BpdGNoXzEiOi04OSwiZGVmX3lhd19tb2RlIjoiT2ZmIiwiZGVmX3RpY2tfc3BlZWQiOjAsImRlZl90aWNrX21vZGUiOiJTdGF0aWMifSwiTWFudWFsIjp7ImVuYWJsZSI6dHJ1ZSwiZGVmX3lhd19jbG9ja19qaXR0ZXIiOjE1LCJkZWZfcGl0Y2hfMiI6ODksImRlZl9waXRjaF9zdGF0aWMiOjg5LCJkZWZfZW5hYmxlIjpmYWxzZSwiZGVmX3BpdGNoX21vZGUiOiJPZmYiLCJkZWZfdGlja19tYXgiOjE0LCJkZWZfeWF3X2N5Y2xlX2ludmVydCI6ZmFsc2UsImRlZl95YXdfbWluIjotOTAsImRlZl9waXRjaF93YXZlX3R5cGUiOiJTaW5lIiwiZGVmX3RpY2tfbWluIjoxLCJkZWZfeWF3X3NwZWVkIjoyMCwiZGVmX2ZvcmNlIjp0cnVlLCJkZWZfeWF3X3N0YXRpYyI6MCwiZGVmX3BpdGNoX2ppdHRlcl9kZWxheSI6MiwiZGVmX3RpY2tfY3ljbGVfc3BlZWQiOjEwLCJkZWZfcGl0Y2hfd2F2ZV9wZXJpb2QiOjMwLCJkZWZfcGl0Y2hfc3BlZWQiOjIwLCJkZWZfeWF3X2Nsb2NrX3N0ZXAiOjMwLCJkZWZfeWF3X2ppdHRlcl9kZWxheSI6MiwiZGVmX3lhd19tYXgiOjkwLCJkZWZfcGl0Y2hfMSI6LTg5LCJkZWZfeWF3X21vZGUiOiJPZmYiLCJkZWZfdGlja19zcGVlZCI6MCwiZGVmX3RpY2tfbW9kZSI6IlN0YXRpYyJ9LCJHbG9iYWwiOnsiZGVmX3lhd19jbG9ja19qaXR0ZXIiOjE1LCJkZWZfcGl0Y2hfMiI6ODksImRlZl9waXRjaF9zdGF0aWMiOjg5LCJkZWZfZW5hYmxlIjpmYWxzZSwiZGVmX3BpdGNoX21vZGUiOiJPZmYiLCJkZWZfeWF3X21vZGUiOiJPZmYiLCJkZWZfeWF3X2N5Y2xlX2ludmVydCI6ZmFsc2UsImRlZl95YXdfbWluIjotOTAsImRlZl9waXRjaF93YXZlX3R5cGUiOiJTaW5lIiwiZGVmX3RpY2tfbWluIjoxLCJkZWZfeWF3X3NwZWVkIjoyMCwiZGVmX2ZvcmNlIjpmYWxzZSwiZGVmX3lhd19zdGF0aWMiOjAsImRlZl9waXRjaF9qaXR0ZXJfZGVsYXkiOjIsImRlZl90aWNrX2N5Y2xlX3NwZWVkIjoxMCwiZGVmX3BpdGNoX3dhdmVfcGVyaW9kIjozMCwiZGVmX3BpdGNoX3NwZWVkIjoyMCwiZGVmX3lhd19jbG9ja19zdGVwIjozMCwiZGVmX3lhd19qaXR0ZXJfZGVsYXkiOjIsImRlZl95YXdfbWF4Ijo5MCwiZGVmX3BpdGNoXzEiOi04OSwiZGVmX3RpY2tfbW9kZSI6IlN0YXRpYyIsImRlZl90aWNrX3NwZWVkIjowLCJkZWZfdGlja19tYXgiOjE0fSwiRmFrZWxhZyI6eyJlbmFibGUiOnRydWUsImRlZl95YXdfY2xvY2tfaml0dGVyIjoxNSwiZGVmX3BpdGNoXzIiOjg5LCJkZWZfcGl0Y2hfc3RhdGljIjo4OSwiZGVmX2VuYWJsZSI6ZmFsc2UsImRlZl9waXRjaF9tb2RlIjoiT2ZmIiwiZGVmX3RpY2tfbWF4IjoxNCwiZGVmX3lhd19jeWNsZV9pbnZlcnQiOmZhbHNlLCJkZWZfeWF3X21pbiI6LTkwLCJkZWZfcGl0Y2hfd2F2ZV90eXBlIjoiU2luZSIsImRlZl90aWNrX21pbiI6MSwiZGVmX3lhd19zcGVlZCI6MjAsImRlZl9mb3JjZSI6dHJ1ZSwiZGVmX3lhd19zdGF0aWMiOjAsImRlZl9waXRjaF9qaXR0ZXJfZGVsYXkiOjIsImRlZl90aWNrX2N5Y2xlX3NwZWVkIjoxMCwiZGVmX3BpdGNoX3dhdmVfcGVyaW9kIjozMCwiZGVmX3BpdGNoX3NwZWVkIjoyMCwiZGVmX3lhd19jbG9ja19zdGVwIjozMCwiZGVmX3lhd19qaXR0ZXJfZGVsYXkiOjIsImRlZl95YXdfbWF4Ijo5MCwiZGVmX3BpdGNoXzEiOi04OSwiZGVmX3lhd19tb2RlIjoiT2ZmIiwiZGVmX3RpY2tfc3BlZWQiOjAsImRlZl90aWNrX21vZGUiOiJTdGF0aWMifSwiU2FmZSI6eyJlbmFibGUiOnRydWUsImRlZl95YXdfY2xvY2tfaml0dGVyIjoxNSwiZGVmX3BpdGNoXzIiOjg5LCJkZWZfcGl0Y2hfc3RhdGljIjo4OSwiZGVmX2VuYWJsZSI6ZmFsc2UsImRlZl9waXRjaF9tb2RlIjoiT2ZmIiwiZGVmX3RpY2tfbWF4IjoxNCwiZGVmX3lhd19jeWNsZV9pbnZlcnQiOmZhbHNlLCJkZWZfeWF3X21pbiI6LTkwLCJkZWZfcGl0Y2hfd2F2ZV90eXBlIjoiU2luZSIsImRlZl90aWNrX21pbiI6MSwiZGVmX3lhd19zcGVlZCI6MjAsImRlZl9mb3JjZSI6dHJ1ZSwiZGVmX3lhd19zdGF0aWMiOjAsImRlZl9waXRjaF9qaXR0ZXJfZGVsYXkiOjIsImRlZl90aWNrX2N5Y2xlX3NwZWVkIjoxMCwiZGVmX3BpdGNoX3dhdmVfcGVyaW9kIjozMCwiZGVmX3BpdGNoX3NwZWVkIjoyMCwiZGVmX3lhd19jbG9ja19zdGVwIjozMCwiZGVmX3lhd19qaXR0ZXJfZGVsYXkiOjIsImRlZl95YXdfbWF4Ijo5MCwiZGVmX3BpdGNoXzEiOi04OSwiZGVmX3lhd19tb2RlIjoiT2ZmIiwiZGVmX3RpY2tfc3BlZWQiOjAsImRlZl90aWNrX21vZGUiOiJTdGF0aWMifSwiY29uZGl0aW9uIjoiQWlyIiwiQWlyIjp7ImVuYWJsZSI6dHJ1ZSwiZGVmX3lhd19jbG9ja19qaXR0ZXIiOjE1LCJkZWZfcGl0Y2hfMiI6NTUsImRlZl9waXRjaF9zdGF0aWMiOjg5LCJkZWZfZW5hYmxlIjp0cnVlLCJkZWZfcGl0Y2hfbW9kZSI6IldhdmUiLCJkZWZfdGlja19tYXgiOjIyLCJkZWZfeWF3X2N5Y2xlX2ludmVydCI6ZmFsc2UsImRlZl95YXdfbWluIjotOTEsImRlZl9waXRjaF93YXZlX3R5cGUiOiJTaW5lIiwiZGVmX3RpY2tfbWluIjoxLCJkZWZfeWF3X3NwZWVkIjoyMCwiZGVmX2ZvcmNlIjp0cnVlLCJkZWZfeWF3X3N0YXRpYyI6MCwiZGVmX3BpdGNoX2ppdHRlcl9kZWxheSI6MiwiZGVmX3RpY2tfY3ljbGVfc3BlZWQiOjEwLCJkZWZfcGl0Y2hfd2F2ZV9wZXJpb2QiOjU5LCJkZWZfcGl0Y2hfc3BlZWQiOjQ0LCJkZWZfeWF3X2Nsb2NrX3N0ZXAiOjMwLCJkZWZfeWF3X2ppdHRlcl9kZWxheSI6MiwiZGVmX3lhd19tYXgiOjEwMSwiZGVmX3BpdGNoXzEiOi02NSwiZGVmX3lhd19tb2RlIjoiRmxpY2siLCJkZWZfdGlja19zcGVlZCI6MCwiZGVmX3RpY2tfbW9kZSI6IkJldGEifSwiU2xvdyI6eyJlbmFibGUiOnRydWUsImRlZl95YXdfY2xvY2tfaml0dGVyIjoxNSwiZGVmX3BpdGNoXzIiOjQwLCJkZWZfcGl0Y2hfc3RhdGljIjo4OSwiZGVmX2VuYWJsZSI6dHJ1ZSwiZGVmX3BpdGNoX21vZGUiOiJXYXZlIiwiZGVmX3RpY2tfbWF4IjoyMiwiZGVmX3lhd19jeWNsZV9pbnZlcnQiOmZhbHNlLCJkZWZfeWF3X21pbiI6LTkwLCJkZWZfcGl0Y2hfd2F2ZV90eXBlIjoiU2luZSIsImRlZl90aWNrX21pbiI6MSwiZGVmX3lhd19zcGVlZCI6MjAsImRlZl9mb3JjZSI6dHJ1ZSwiZGVmX3lhd19zdGF0aWMiOjkzLCJkZWZfcGl0Y2hfaml0dGVyX2RlbGF5Ijo0LCJkZWZfdGlja19jeWNsZV9zcGVlZCI6MTAsImRlZl9waXRjaF93YXZlX3BlcmlvZCI6ODksImRlZl9waXRjaF9zcGVlZCI6MzMsImRlZl95YXdfY2xvY2tfc3RlcCI6MzAsImRlZl95YXdfaml0dGVyX2RlbGF5Ijo0LCJkZWZfeWF3X21heCI6MTE3LCJkZWZfcGl0Y2hfMSI6LTYxLCJkZWZfeWF3X21vZGUiOiJGbGljayIsImRlZl90aWNrX3NwZWVkIjoxNCwiZGVmX3RpY2tfbW9kZSI6IlJhbmRvbSBKaXR0ZXIifSwiQ3JvdWNoIjp7ImVuYWJsZSI6dHJ1ZSwiZGVmX3lhd19jbG9ja19qaXR0ZXIiOjE1LCJkZWZfcGl0Y2hfMiI6LTQ4LCJkZWZfcGl0Y2hfc3RhdGljIjotNjgsImRlZl9lbmFibGUiOnRydWUsImRlZl9waXRjaF9tb2RlIjoiV2F2ZSIsImRlZl90aWNrX21heCI6MjIsImRlZl95YXdfY3ljbGVfaW52ZXJ0IjpmYWxzZSwiZGVmX3lhd19taW4iOi04OCwiZGVmX3BpdGNoX3dhdmVfdHlwZSI6IlNpbmUiLCJkZWZfdGlja19taW4iOjEsImRlZl95YXdfc3BlZWQiOjE5LCJkZWZfZm9yY2UiOnRydWUsImRlZl95YXdfc3RhdGljIjowLCJkZWZfcGl0Y2hfaml0dGVyX2RlbGF5IjozLCJkZWZfdGlja19jeWNsZV9zcGVlZCI6MzAsImRlZl9waXRjaF93YXZlX3BlcmlvZCI6MzAsImRlZl9waXRjaF9zcGVlZCI6MzEsImRlZl95YXdfY2xvY2tfc3RlcCI6MzAsImRlZl95YXdfaml0dGVyX2RlbGF5IjozLCJkZWZfeWF3X21heCI6MTgwLCJkZWZfcGl0Y2hfMSI6LTg5LCJkZWZfeWF3X21vZGUiOiJTcGluIiwiZGVmX3RpY2tfc3BlZWQiOjAsImRlZl90aWNrX21vZGUiOiJDeWNsZSJ9LCJDLUFpciI6eyJlbmFibGUiOnRydWUsImRlZl95YXdfY2xvY2tfaml0dGVyIjoxNSwiZGVmX3BpdGNoXzIiOjg5LCJkZWZfcGl0Y2hfc3RhdGljIjo4OSwiZGVmX2VuYWJsZSI6ZmFsc2UsImRlZl9waXRjaF9tb2RlIjoiT2ZmIiwiZGVmX3RpY2tfbWF4IjoxNCwiZGVmX3lhd19jeWNsZV9pbnZlcnQiOmZhbHNlLCJkZWZfeWF3X21pbiI6LTkwLCJkZWZfcGl0Y2hfd2F2ZV90eXBlIjoiU2luZSIsImRlZl90aWNrX21pbiI6MSwiZGVmX3lhd19zcGVlZCI6MjAsImRlZl9mb3JjZSI6dHJ1ZSwiZGVmX3lhd19zdGF0aWMiOjAsImRlZl9waXRjaF9qaXR0ZXJfZGVsYXkiOjIsImRlZl90aWNrX2N5Y2xlX3NwZWVkIjoxMCwiZGVmX3BpdGNoX3dhdmVfcGVyaW9kIjozMCwiZGVmX3BpdGNoX3NwZWVkIjoyMCwiZGVmX3lhd19jbG9ja19zdGVwIjozMCwiZGVmX3lhd19qaXR0ZXJfZGVsYXkiOjIsImRlZl95YXdfbWF4Ijo5MCwiZGVmX3BpdGNoXzEiOi04OSwiZGVmX3lhd19tb2RlIjoiT2ZmIiwiZGVmX3RpY2tfc3BlZWQiOjAsImRlZl90aWNrX21vZGUiOiJTdGF0aWMifSwiQy1Nb3ZlIjp7ImVuYWJsZSI6dHJ1ZSwiZGVmX3lhd19jbG9ja19qaXR0ZXIiOjE1LCJkZWZfcGl0Y2hfMiI6ODksImRlZl9waXRjaF9zdGF0aWMiOjg5LCJkZWZfZW5hYmxlIjpmYWxzZSwiZGVmX3BpdGNoX21vZGUiOiJPZmYiLCJkZWZfdGlja19tYXgiOjE0LCJkZWZfeWF3X2N5Y2xlX2ludmVydCI6ZmFsc2UsImRlZl95YXdfbWluIjotOTAsImRlZl9waXRjaF93YXZlX3R5cGUiOiJTaW5lIiwiZGVmX3RpY2tfbWluIjoxLCJkZWZfeWF3X3NwZWVkIjoyMCwiZGVmX2ZvcmNlIjp0cnVlLCJkZWZfeWF3X3N0YXRpYyI6MCwiZGVmX3BpdGNoX2ppdHRlcl9kZWxheSI6MiwiZGVmX3RpY2tfY3ljbGVfc3BlZWQiOjEwLCJkZWZfcGl0Y2hfd2F2ZV9wZXJpb2QiOjMwLCJkZWZfcGl0Y2hfc3BlZWQiOjIwLCJkZWZfeWF3X2Nsb2NrX3N0ZXAiOjMwLCJkZWZfeWF3X2ppdHRlcl9kZWxheSI6MiwiZGVmX3lhd19tYXgiOjkwLCJkZWZfcGl0Y2hfMSI6LTg5LCJkZWZfeWF3X21vZGUiOiJPZmYiLCJkZWZfdGlja19zcGVlZCI6MCwiZGVmX3RpY2tfbW9kZSI6IlN0YXRpYyJ9LCJGcmVlc3RhbmQiOnsiZW5hYmxlIjp0cnVlLCJkZWZfeWF3X2Nsb2NrX2ppdHRlciI6MTUsImRlZl9waXRjaF8yIjo4OSwiZGVmX3BpdGNoX3N0YXRpYyI6ODksImRlZl9lbmFibGUiOmZhbHNlLCJkZWZfcGl0Y2hfbW9kZSI6Ik9mZiIsImRlZl90aWNrX21heCI6MTQsImRlZl95YXdfY3ljbGVfaW52ZXJ0IjpmYWxzZSwiZGVmX3lhd19taW4iOi05MCwiZGVmX3BpdGNoX3dhdmVfdHlwZSI6IlNpbmUiLCJkZWZfdGlja19taW4iOjEsImRlZl95YXdfc3BlZWQiOjIwLCJkZWZfZm9yY2UiOnRydWUsImRlZl95YXdfc3RhdGljIjowLCJkZWZfcGl0Y2hfaml0dGVyX2RlbGF5IjoyLCJkZWZfdGlja19jeWNsZV9zcGVlZCI6MTAsImRlZl9waXRjaF93YXZlX3BlcmlvZCI6MzAsImRlZl9waXRjaF9zcGVlZCI6MjAsImRlZl95YXdfY2xvY2tfc3RlcCI6MzAsImRlZl95YXdfaml0dGVyX2RlbGF5IjoyLCJkZWZfeWF3X21heCI6OTAsImRlZl9waXRjaF8xIjotODksImRlZl95YXdfbW9kZSI6Ik9mZiIsImRlZl90aWNrX3NwZWVkIjowLCJkZWZfdGlja19tb2RlIjoiU3RhdGljIn19LCJjb25maWciOnsibGlzdCI6MSwibmFtZSI6IjExMTEifX19"
 
 local config_system = {}
 local protected_db = {
@@ -1315,8 +1432,8 @@ for _, state_name in ipairs(state_list) do
     state_config.desync_left_limit = pui_group:slider("Left" .. suffix, -60, 60, 0, true, "°", 1)
     state_config.desync_right_limit = pui_group:slider("Right" .. suffix, -60, 60, 0, true, "°", 1)
     state_config.desync_randomization = pui_group:slider("Randomize" .. suffix, 0, 20, 0, true, "°", 1)
-    state_config.timing_tick_delay = pui_group:slider("Switch Speed" .. suffix, 1, 10, 3, true, "t", 1)
-    state_config.timing_tick_variance = pui_group:slider("Speed Random" .. suffix, 0, 8, 0, true, "t", 0.5)
+    state_config.timing_tick_delay = pui_group:slider("Switch Speed" .. suffix, 1, 20, 3, true, "t", 1)
+    state_config.timing_tick_variance = pui_group:slider("Speed Variability" .. suffix, 0, 100, 0, true, "%", 1)
     state_config.desync_xway_count = pui_group:slider("Ways" .. suffix, 2, 8, 3, true, "", 1)
     state_config.desync_xway_steps = {}
     for i = 1, 8 do
@@ -1330,8 +1447,8 @@ for _, state_name in ipairs(state_list) do
     state_config.body_yaw_jitter_left = pui_group:slider("Jitter Left" .. suffix, 0, 60, 60, true, "°", 1)
     state_config.body_yaw_jitter_right = pui_group:slider("Jitter Right" .. suffix, 0, 60, 60, true, "°", 1)
     state_config.body_yaw_jitter_variance = pui_group:slider("BY Randomize" .. suffix, 0, 20, 0, true, "°", 1)
-    state_config.body_yaw_variance_delay = pui_group:slider("Jitter Speed" .. suffix, 1, 10, 3, true, "t", 1)
-    state_config.body_yaw_delay_variance = pui_group:slider("BY Speed Chaos" .. suffix, 0, 8, 0, true, "t", 0.1)
+    state_config.body_yaw_variance_delay = pui_group:slider("Jitter Speed" .. suffix, 1, 20, 3, true, "t", 1)
+    state_config.body_yaw_delay_variance = pui_group:slider("BY Speed Chaos" .. suffix, 0, 100, 0, true, "%", 1)
 end
 menu.builder_package = pui.setup(menu.builder)
 local function init_ui_visibility()
@@ -1374,6 +1491,39 @@ local function hide_all()
     menu.antiaim.safe_head:set_visible(false)
     menu.antiaim.safe_head_triggers:set_visible(false)
     menu.antiaim.utilities:set_visible(false)
+    if menu.defensive then
+        if menu.defensive.condition then menu.defensive.condition:set_visible(false) end
+        for _, state_name in ipairs(state_list) do
+            local def_config = menu.defensive[state_name]
+            if def_config then
+                if def_config.enable then def_config.enable:set_visible(false) end
+                if def_config.def_force then def_config.def_force:set_visible(false) end
+                if def_config.def_enable then def_config.def_enable:set_visible(false) end
+                if def_config.def_tick_mode then def_config.def_tick_mode:set_visible(false) end
+                if def_config.def_tick_speed then def_config.def_tick_speed:set_visible(false) end
+                if def_config.def_tick_min then def_config.def_tick_min:set_visible(false) end
+                if def_config.def_tick_max then def_config.def_tick_max:set_visible(false) end
+                if def_config.def_tick_cycle_speed then def_config.def_tick_cycle_speed:set_visible(false) end
+                if def_config.def_pitch_mode then def_config.def_pitch_mode:set_visible(false) end
+                if def_config.def_pitch_1 then def_config.def_pitch_1:set_visible(false) end
+                if def_config.def_pitch_2 then def_config.def_pitch_2:set_visible(false) end
+                if def_config.def_pitch_static then def_config.def_pitch_static:set_visible(false) end
+                if def_config.def_pitch_speed then def_config.def_pitch_speed:set_visible(false) end
+                if def_config.def_pitch_jitter_delay then def_config.def_pitch_jitter_delay:set_visible(false) end
+                if def_config.def_pitch_wave_type then def_config.def_pitch_wave_type:set_visible(false) end
+                if def_config.def_pitch_wave_period then def_config.def_pitch_wave_period:set_visible(false) end
+                if def_config.def_yaw_mode then def_config.def_yaw_mode:set_visible(false) end
+                if def_config.def_yaw_static then def_config.def_yaw_static:set_visible(false) end
+                if def_config.def_yaw_min then def_config.def_yaw_min:set_visible(false) end
+                if def_config.def_yaw_max then def_config.def_yaw_max:set_visible(false) end
+                if def_config.def_yaw_speed then def_config.def_yaw_speed:set_visible(false) end
+                if def_config.def_yaw_jitter_delay then def_config.def_yaw_jitter_delay:set_visible(false) end
+                if def_config.def_yaw_cycle_invert then def_config.def_yaw_cycle_invert:set_visible(false) end
+                if def_config.def_yaw_clock_step then def_config.def_yaw_clock_step:set_visible(false) end
+                if def_config.def_yaw_clock_jitter then def_config.def_yaw_clock_jitter:set_visible(false) end
+            end
+        end
+    end
     if menu.builder then
         for _, state_name in ipairs(state_list) do
             local state_config = menu.builder[state_name]
@@ -1403,42 +1553,6 @@ local function hide_all()
                 state_config.body_yaw_variance_delay:set_visible(false)
                 state_config.body_yaw_variance_delay:set_visible(false)
                 state_config.body_yaw_delay_variance:set_visible(false)
-            end
-        end
-    end
-    if menu.defensive then
-        if menu.defensive.condition then menu.defensive.condition:set_visible(false) end
-        for _, state_name in ipairs(state_list) do
-            local def_config = menu.defensive[state_name]
-            if def_config then
-                if def_config.enable then def_config.enable:set_visible(false) end
-                if def_config.def_force then def_config.def_force:set_visible(false) end
-                if def_config.def_enable then def_config.def_enable:set_visible(false) end
-                if def_config.def_tick_mode then def_config.def_tick_mode:set_visible(false) end
-                if def_config.def_tick_speed then def_config.def_tick_speed:set_visible(false) end
-                if def_config.def_pitch_mode then def_config.def_pitch_mode:set_visible(false) end
-                if def_config.def_pitch_1 then def_config.def_pitch_1:set_visible(false) end
-                if def_config.def_pitch_2 then def_config.def_pitch_2:set_visible(false) end
-                if def_config.def_pitch_speed then def_config.def_pitch_speed:set_visible(false) end
-                if def_config.def_pitch_jitter_min then def_config.def_pitch_jitter_min:set_visible(false) end
-                if def_config.def_pitch_jitter_max then def_config.def_pitch_jitter_max:set_visible(false) end
-                if def_config.def_yaw_mode then def_config.def_yaw_mode:set_visible(false) end
-                if def_config.def_yaw_offset then def_config.def_yaw_offset:set_visible(false) end
-                if def_config.def_yaw_left then def_config.def_yaw_left:set_visible(false) end
-                if def_config.def_yaw_right then def_config.def_yaw_right:set_visible(false) end
-                if def_config.def_yaw_speed then def_config.def_yaw_speed:set_visible(false) end
-                if def_config.def_jitter_delay_min then def_config.def_jitter_delay_min:set_visible(false) end
-                if def_config.def_jitter_delay_max then def_config.def_jitter_delay_max:set_visible(false) end
-                if def_config.def_3way_angle1 then def_config.def_3way_angle1:set_visible(false) end
-                if def_config.def_3way_angle2 then def_config.def_3way_angle2:set_visible(false) end
-                if def_config.def_3way_angle3 then def_config.def_3way_angle3:set_visible(false) end
-                if def_config.def_3way_delay then def_config.def_3way_delay:set_visible(false) end
-                if def_config.def_5way_angle1 then def_config.def_5way_angle1:set_visible(false) end
-                if def_config.def_5way_angle2 then def_config.def_5way_angle2:set_visible(false) end
-                if def_config.def_5way_angle3 then def_config.def_5way_angle3:set_visible(false) end
-                if def_config.def_5way_angle4 then def_config.def_5way_angle4:set_visible(false) end
-                if def_config.def_5way_angle5 then def_config.def_5way_angle5:set_visible(false) end
-                if def_config.def_5way_delay then def_config.def_5way_delay:set_visible(false) end
             end
         end
     end
@@ -1476,6 +1590,22 @@ show_tab = function(tab_name)
             menu.ragebot.peekbot_enabled:set_visible(true)
             menu.ragebot.peekbot_teleport:set_visible(true)
             menu.ragebot.peekbot_range:set_visible(true)
+            menu.ragebot.reset_fakelag_on_shot:set_visible(true)
+            menu.ragebot.lethal_enabled:set_visible(true)
+            local lethal_enabled = get_menu_value(menu.ragebot.lethal_enabled)
+            menu.ragebot.lethal_hp_threshold:set_visible(lethal_enabled)
+            menu.ragebot.lethal_auto_baim:set_visible(lethal_enabled)
+            menu.ragebot.lethal_auto_damage:set_visible(lethal_enabled)
+            menu.ragebot.lethal_safe_point:set_visible(lethal_enabled)
+            menu.ragebot.fakelag_enabled:set_visible(true)
+            local fakelag_enabled = get_menu_value(menu.ragebot.fakelag_enabled)
+            menu.ragebot.fakelag_mode:set_visible(fakelag_enabled)
+            local fakelag_mode = fakelag_enabled and menu.ragebot.fakelag_mode:get() or ""
+            menu.ragebot.fakelag_limit:set_visible(fakelag_enabled and (fakelag_mode == "Static" or fakelag_mode == "Fluctuate"))
+            menu.ragebot.fakelag_min:set_visible(fakelag_enabled and (fakelag_mode == "Random" or fakelag_mode == "Cycle"))
+            menu.ragebot.fakelag_max:set_visible(fakelag_enabled and (fakelag_mode == "Random" or fakelag_mode == "Cycle"))
+            menu.ragebot.fakelag_step:set_visible(fakelag_enabled and fakelag_mode == "Cycle")
+            menu.ragebot.fakelag_disable_exploit:set_visible(fakelag_enabled)
         end
         if selected == "misc" then
             menu.misc.chat_spammer:set_visible(true)
@@ -1593,56 +1723,74 @@ show_tab = function(tab_name)
                     if def_enabled then
                         def_config.def_tick_mode:set_visible(true)
                         local tick_mode = def_config.def_tick_mode:get()
-                        if tick_mode == "Custom" then
+                        
+                        if tick_mode == "Static" then
                             def_config.def_tick_speed:set_visible(true)
+                        elseif tick_mode == "Jitter" or tick_mode == "Random" or tick_mode == "Random Jitter" 
+                               or tick_mode == "Random Trigger" or tick_mode == "Random Static" then
+                            def_config.def_tick_min:set_visible(true)
+                            def_config.def_tick_max:set_visible(true)
+                        elseif tick_mode == "Cycle" then
+                            def_config.def_tick_min:set_visible(true)
+                            def_config.def_tick_max:set_visible(true)
+                            def_config.def_tick_cycle_speed:set_visible(true)
                         end
 
                         def_config.def_pitch_mode:set_visible(true)
                         local pitch_mode = def_config.def_pitch_mode:get()
                         if pitch_mode ~= "Off" then
-                            def_config.def_pitch_1:set_visible(true)
-                            if pitch_mode ~= "Static" then
+                            if pitch_mode == "Static" then
+                                def_config.def_pitch_static:set_visible(true)
+                            end
+                            
+                            if pitch_mode == "Jitter" or pitch_mode == "Random" or pitch_mode == "Spin" 
+                               or pitch_mode == "Random Static" or pitch_mode == "Wave" then
+                                def_config.def_pitch_1:set_visible(true)
                                 def_config.def_pitch_2:set_visible(true)
                             end
-                            if pitch_mode == "Wave" then
+                            
+                            if pitch_mode == "Spin" then
                                 def_config.def_pitch_speed:set_visible(true)
                             end
+                            
                             if pitch_mode == "Jitter" then
-                                def_config.def_pitch_jitter_min:set_visible(true)
-                                def_config.def_pitch_jitter_max:set_visible(true)
+                                def_config.def_pitch_jitter_delay:set_visible(true)
+                            end
+                            
+                            if pitch_mode == "Wave" then
+                                def_config.def_pitch_wave_type:set_visible(true)
+                                def_config.def_pitch_wave_period:set_visible(true)
                             end
                         end
 
                         def_config.def_yaw_mode:set_visible(true)
                         local yaw_mode = def_config.def_yaw_mode:get()
                         if yaw_mode ~= "Off" then
-                            if yaw_mode == "Static" or yaw_mode == "Spin" or yaw_mode == "Random" then
-                                def_config.def_yaw_offset:set_visible(true)
+                            if yaw_mode == "Static" then
+                                def_config.def_yaw_static:set_visible(true)
                             end
-                            if yaw_mode == "Jitter" or yaw_mode == "L&R Random" then
-                                def_config.def_yaw_left:set_visible(true)
-                                def_config.def_yaw_right:set_visible(true)
+                            
+                            if yaw_mode == "Jitter" or yaw_mode == "Random" or yaw_mode == "Spin" 
+                               or yaw_mode == "Cycle Spin" or yaw_mode == "Random Static" or yaw_mode == "Flick" then
+                                def_config.def_yaw_min:set_visible(true)
+                                def_config.def_yaw_max:set_visible(true)
                             end
-                            if yaw_mode == "Spin" then
+                            
+                            if yaw_mode == "Spin" or yaw_mode == "Cycle Spin" or yaw_mode == "Clock" then
                                 def_config.def_yaw_speed:set_visible(true)
                             end
-                            if yaw_mode == "Jitter" then
-                                def_config.def_jitter_delay_min:set_visible(true)
-                                def_config.def_jitter_delay_max:set_visible(true)
+                            
+                            if yaw_mode == "Jitter" or yaw_mode == "Cycle Spin" then
+                                def_config.def_yaw_jitter_delay:set_visible(true)
                             end
-                            if yaw_mode == "3-Way" then
-                                def_config.def_3way_angle1:set_visible(true)
-                                def_config.def_3way_angle2:set_visible(true)
-                                def_config.def_3way_angle3:set_visible(true)
-                                def_config.def_3way_delay:set_visible(true)
+                            
+                            if yaw_mode == "Cycle Spin" then
+                                def_config.def_yaw_cycle_invert:set_visible(true)
                             end
-                            if yaw_mode == "5-Way" then
-                                def_config.def_5way_angle1:set_visible(true)
-                                def_config.def_5way_angle2:set_visible(true)
-                                def_config.def_5way_angle3:set_visible(true)
-                                def_config.def_5way_angle4:set_visible(true)
-                                def_config.def_5way_angle5:set_visible(true)
-                                def_config.def_5way_delay:set_visible(true)
+                            
+                            if yaw_mode == "Clock" then
+                                def_config.def_yaw_clock_step:set_visible(true)
+                                def_config.def_yaw_clock_jitter:set_visible(true)
                             end
                         end
                     end
@@ -1766,6 +1914,24 @@ ui.set_callback(menu.ragebot.air_stop_enabled.ref, function()
     end
 end)
 ui.set_callback(menu.ragebot.peekbot_enabled.ref, function()
+    local current_tab = menu.tab:get()
+    if string.find(current_tab, "Ragebot", 1, true) then
+        show_tab(current_tab)
+    end
+end)
+ui.set_callback(menu.ragebot.lethal_enabled.ref, function()
+    local current_tab = menu.tab:get()
+    if string.find(current_tab, "Ragebot", 1, true) then
+        show_tab(current_tab)
+    end
+end)
+ui.set_callback(menu.ragebot.fakelag_enabled.ref, function()
+    local current_tab = menu.tab:get()
+    if string.find(current_tab, "Ragebot", 1, true) then
+        show_tab(current_tab)
+    end
+end)
+ui.set_callback(menu.ragebot.fakelag_mode.ref, function()
     local current_tab = menu.tab:get()
     if string.find(current_tab, "Ragebot", 1, true) then
         show_tab(current_tab)
@@ -1895,6 +2061,9 @@ local function get_base_offset()
     return vals.yaw_base_degrees or 0
 end
 local global_anti_prediction = {
+    discrete_delays = {
+        [1] = 1, [2] = 2, [3] = 3, [4] = 5, [5] = 7, [6] = 10, [7] = 13, [8] = 17, [9] = 20
+    },
     cache = {
         chaos_values = {},
         last_update_tick = 0,
@@ -1979,7 +2148,8 @@ local function manage_state_profiles(state_profiles, current_state)
     end
 end
 global_anti_prediction.yaw_offset_state = {
-    lr_cycle = 1,
+    lr_packets = 0,
+    lr_last_flip = 0,
     lr_side = 1,
     lr_current_delay = 3,
     lr_seed = 0,
@@ -2462,6 +2632,38 @@ local function init_yaw_offset_seeds()
     yaw_offset_state.xway_seed = entropy_streams.xway.seed1
 end
 init_yaw_offset_seeds()
+
+local function find_closest_delay(delay)
+    local discrete_delays = global_anti_prediction.discrete_delays
+    local closest_idx = 1
+    local min_diff = math.huge
+    for i = 1, #discrete_delays do
+        local diff = math.abs(delay - discrete_delays[i])
+        if diff < min_diff then
+            min_diff = diff
+            closest_idx = i
+        end
+    end
+    return closest_idx
+end
+
+local function get_random_delay(base_delay, variability)
+    if base_delay <= 1 or variability <= 0 then
+        return base_delay
+    end
+    
+    local discrete_delays = global_anti_prediction.discrete_delays
+    local closest_idx = find_closest_delay(base_delay)
+    local total_count = #discrete_delays
+    
+    local range = math.floor(total_count * variability / 200 + 0.5)
+    local min_idx = math.max(1, closest_idx - range)
+    local max_idx = math.min(total_count, closest_idx + range)
+    
+    local random_idx = math.random(min_idx, max_idx)
+    return discrete_delays[random_idx]
+end
+
 local function chaos_random(state_seed, min, max)
     local entropy_streams = global_anti_prediction.entropy_streams
     return enhanced_random(min, max, "timing"), entropy_streams.timing.seed1
@@ -3026,7 +3228,6 @@ local function calc_yaw_offset(vals)
                 for i = #dr.history - 5, #dr.history do dr.pat_var = dr.pat_var + (dr.history[i] - dr.pat_mean)^2 end
                 local variance_pattern = dr.pat_var / 6 < randomization * 0.3
                 
-                -- Enhanced autocorrelation detection with multiple lags
                 local autocorr = 0
                 if #dr.history >= 8 then
                     for lag = 2, 4 do
@@ -3039,7 +3240,6 @@ local function calc_yaw_offset(vals)
                 end
                 local periodic_pattern = autocorr > randomization * randomization * 0.5
                 
-                -- Enhanced trend detection with derivative analysis
                 local trend_detected = false
                 if #dr.history >= 6 then
                     local diffs = {}
@@ -3054,7 +3254,6 @@ local function calc_yaw_offset(vals)
                     trend_detected = diff_var / #diffs < randomization * 0.1
                 end
                 
-                -- New: Frequency domain pattern detection
                 local freq_pattern = false
                 if #dr.history >= 8 then
                     local fft_sum = 0
@@ -3068,7 +3267,6 @@ local function calc_yaw_offset(vals)
                     freq_pattern = fft_sum > randomization * 3
                 end
                 
-                -- New: Entropy-based pattern detection
                 local entropy_pattern = false
                 if #dr.history >= 6 then
                     local bins = {0, 0, 0, 0, 0}
@@ -3083,7 +3281,7 @@ local function calc_yaw_offset(vals)
                             entropy = entropy - p * math.log(p)
                         end
                     end
-                    entropy_pattern = entropy < 0.8  -- Low entropy = predictable
+                    entropy_pattern = entropy < 0.8
                 end
                 
                 dr.pattern_detected = variance_pattern or periodic_pattern or trend_detected or freq_pattern or entropy_pattern
@@ -3093,7 +3291,7 @@ local function calc_yaw_offset(vals)
                 dr.pattern_break_cooldown = dr.pattern_break_cooldown - 1
             elseif dr.pattern_detected then
                 dr.pattern_break_cooldown = enhanced_random(6, 14, "timing")
-                dr.anti_resolver_mode = (dr.anti_resolver_mode + 1) % 41  -- Updated to 41 modes (0-40)
+                dr.anti_resolver_mode = (dr.anti_resolver_mode + 1) % 41
                 dr.break_strength = randomization * 2
                 
                 if dr.anti_resolver_mode == 0 then
@@ -3155,647 +3353,18 @@ local function calc_yaw_offset(vals)
             v_left, v_right = left_limit + dr.jitter_left, right_limit + dr.jitter_right
         end
         
-        if globals.chokedcommands() == 0 and state.lr_cycle >= state.lr_current_delay then
+        if globals.chokedcommands() == 0 and state.lr_current_delay <= (state.lr_packets - state.lr_last_flip) then
             current_side = current_side == 1 and 0 or 1
             local timing_variance = vals.timing_tick_variance or 0
             
             if timing_variance > 0 then
-                    if not state.lr_chaos then
-                        state.lr_chaos = {
-                            -- 核心混沌系统
-                            lorenz_x = 0.1, lorenz_y = 0.1, lorenz_z = 0.1,
-                            rossler = {x = 0.1, y = 0.1, z = 0.1},
-                            henon = {x = 0.1, y = 0.1},
-                            logistic_x = 0.5,
-                            tent_x = 0.5,
-                            
-                            -- 量子态模拟
-                            quantum_superposition = {},
-                            quantum_entangle = {},
-                            quantum_decoherence = 0,
-                            quantum_collapse_tick = 0,
-                            quantum_phase = 0,
-                            quantum_state = 0,
-                            
-                            -- 神经网络反预测
-                            neural_layers = {{}, {}},
-                            neural_weights_l1 = {},
-                            neural_weights_l2 = {},
-                            neural_weights = {},
-                            neural_bias = 0,
-                            learning_rate = 0.08,
-                            adaptive_learning_rate = 0.08,
-                            prediction_history = {},
-                            prediction_error = 0,
-                            
-                            -- 时间序列分析
-                            time_series = {},
-                            autocorr_buffer = {},
-                            fft_samples = {},
-                            spectral_entropy = 1.0,
-                            
-                            -- 模式检测器
-                            pattern_detector = {
-                                history = {},
-                                variance_history = {},
-                                entropy_history = {},
-                                detected = false,
-                                detection_count = 0,
-                                last_break = 0
-                            },
-                            
-                            -- 自适应系统
-                            adaptive_velocity = 0,
-                            adaptive_scale = 1.0,
-                            adaptive_momentum = 0,
-                            
-                            -- 熵池系统
-                            entropy_pool = {},
-                            entropy_idx = 1,
-                            entropy_mixing_state = 0,
-                            
-                            -- 频率跳变
-                            frequency_hopper = 1,
-                            frequency_table = {1, 2, 3, 5, 7, 11, 13, 17},
-                            frequency_phase = 0,
-                            
-                            -- Markov链
-                            markov_state = 1,
-                            markov_history = {},
-                            
-                            -- 分形系统
-                            fractal_octaves = {0, 0, 0, 0, 0},
-                            fractal_persistence = 0.5,
-                            
-                            -- 布朗运动
-                            brownian_x = 0,
-                            brownian_v = 0,
-                            brownian_drift = 0,
-                            
-                            -- 爆发系统
-                            burst_active = false,
-                            burst_cooldown = 0,
-                            burst_intensity = 0,
-                            
-                            -- 尖峰系统
-                            spike_cooldown = 0,
-                            spike_magnitude = 0,
-                            
-                            -- 紧急模式
-                            emergency_mode = false,
-                            emergency_ticks = 0,
-                            emergency_level = 0,
-                            
-                            -- 反ML系统
-                            anti_ml_deception = {
-                                active = false,
-                                fake_pattern = {},
-                                real_hidden = false,
-                                duration = 0
-                            },
-                            
-                            -- 交叉耦合
-                            cross_coupling = 0,
-                            coupling_strength = 0.15,
-                            
-                            -- 相位系统
-                            phase = 0,
-                            phase_velocity = 1.0,
-                            
-                            -- 微观抖动
-                            micro_jitter = 0,
-                            
-                            -- 混沌健康度
-                            chaos_health = 1.0,
-                            health_check_tick = 0,
-                            
-                            -- 混沌累加器
-                            chaos_accumulator = 0,
-                            
-                            -- 记忆系统
-                            last_delay = 0,
-                            delay_history = {},
-                            
-                            -- 平滑因子
-                            smooth_factor = 0,
-                            
-                            -- 随机跳跃
-                            random_jump_cooldown = 0,
-                            
-                            -- 双吸引子
-                            dual_attractor = {
-                                x1 = 0.1, y1 = 0.1, z1 = 0.1,
-                                x2 = -0.1, y2 = -0.1, z2 = -0.1,
-                                coupling = 0.3,
-                                coupling_mode = 1,
-                                coupling_phase = 0
-                            }
-                        }
-                        -- 初始化量子态
-                        for i = 1, 5 do
-                            state.lr_chaos.quantum_superposition[i] = enhanced_random(-100, 100, "timing") / 100
-                            state.lr_chaos.quantum_entangle[i] = {
-                                a = enhanced_random(-100, 100, "timing") / 100,
-                                b = enhanced_random(-100, 100, "timing") / 100,
-                                phase = enhanced_random(0, 360, "timing")
-                            }
-                        end
-                        -- 初始化神经网络
-                        for i = 1, 8 do
-                            state.lr_chaos.neural_weights_l1[i] = enhanced_random(-80, 80, "timing") / 100
-                            state.lr_chaos.neural_weights_l2[i] = enhanced_random(-80, 80, "timing") / 100
-                        end
-                        -- 初始化熵池
-                        for i = 1, 16 do
-                            state.lr_chaos.entropy_pool[i] = inject_true_entropy() % 1000 / 1000
-                        end
-                    end
-                    local chaos = state.lr_chaos
-                    local chaos_entropy = inject_true_entropy() % 100
-                    local variance_mult = 1.0
-                    local extra_chaos = 0
-                    
-                    -- 紧急模式检测
-                    if chaos.emergency_mode then
-                        chaos.emergency_ticks = chaos.emergency_ticks - 1
-                        if chaos.emergency_ticks <= 0 then
-                            chaos.emergency_mode = false
-                        else
-                            variance_mult = variance_mult * 2.5
-                            extra_chaos = extra_chaos + enhanced_random(-timing_variance * 3, timing_variance * 3, "timing")
-                        end
-                    end
-                    
-                    -- 平滑因子增强
-                    chaos.smooth_factor = chaos.smooth_factor + enhanced_random(-30, 30, "timing") / 100
-                    chaos.smooth_factor = math.max(-1, math.min(1, chaos.smooth_factor))
-                    local smooth_contrib = math.abs(chaos.smooth_factor) * 0.3
-                    
-                    -- 尖峰系统增强
-                    if chaos.spike_cooldown > 0 then
-                        chaos.spike_cooldown = chaos.spike_cooldown - 1
-                    elseif chaos_entropy < 12 then
-                        chaos.spike_cooldown = enhanced_random(8, 20, "timing")
-                        extra_chaos = enhanced_random(timing_variance, timing_variance * 2, "timing")
-                        if chaos_entropy < 6 then
-                            variance_mult = 0.3
-                            chaos.emergency_mode = true
-                            chaos.emergency_ticks = enhanced_random(5, 10, "timing")
-                        end
-                    end
-                    
-                    -- 速度自适应增强
-                    local me = entity.get_local_player()
-                    if me then
-                        local vx, vy = entity.get_prop(me, "m_vecVelocity")
-                        if vx and vy then
-                            local velocity = math.sqrt(vx * vx + vy * vy)
-                            chaos.adaptive_velocity = chaos.adaptive_velocity * 0.9 + velocity * 0.1
-                            if chaos.adaptive_velocity > 200 then
-                                variance_mult = variance_mult * 0.7
-                            elseif chaos.adaptive_velocity < 10 then
-                                variance_mult = variance_mult * 1.3
-                                if chaos_entropy < 15 then
-                                    extra_chaos = extra_chaos + enhanced_random(0, timing_variance * 0.5, "timing")
-                                end
-                            end
-                        end
-                    end
-                    
-                    -- Lorenz吸引子
-                    local sigma, rho, beta = 10, 28, 2.667
-                    local dt = 0.02
-                    local dx = sigma * (chaos.lorenz_y - chaos.lorenz_x) * dt
-                    local dy = (chaos.lorenz_x * (rho - chaos.lorenz_z) - chaos.lorenz_y) * dt
-                    local dz = (chaos.lorenz_x * chaos.lorenz_y - beta * chaos.lorenz_z) * dt
-                    chaos.lorenz_x = math.max(-30, math.min(30, chaos.lorenz_x + dx))
-                    chaos.lorenz_y = math.max(-30, math.min(30, chaos.lorenz_y + dy))
-                    chaos.lorenz_z = math.max(0, math.min(50, chaos.lorenz_z + dz))
-                    local C1 = (chaos.lorenz_x + chaos.lorenz_y) * 0.02
-                    
-                    -- Rossler吸引子
-                    chaos.rossler.x = math.max(-25, math.min(25, chaos.rossler.x + (-chaos.rossler.y - chaos.rossler.z) * 0.04))
-                    chaos.rossler.y = math.max(-25, math.min(25, chaos.rossler.y + (chaos.rossler.x + 0.2 * chaos.rossler.y) * 0.04))
-                    chaos.rossler.z = math.max(0, math.min(35, chaos.rossler.z + (0.2 + chaos.rossler.z * (chaos.rossler.x - 5.7)) * 0.04))
-                    local C2 = chaos.rossler.x * 0.035
-                    
-                    -- Henon映射
-                    local hx_new = 1 - 1.4 * chaos.henon.x * chaos.henon.x + chaos.henon.y
-                    chaos.henon.y = 0.3 * chaos.henon.x
-                    chaos.henon.x = math.max(-1.5, math.min(1.5, hx_new))
-                    local C3 = chaos.henon.x * 0.35
-                    
-                    -- Logistic映射
-                    chaos.logistic_x = math.max(0.001, math.min(0.999, 3.9 * chaos.logistic_x * (1 - chaos.logistic_x)))
-                    local C4 = (chaos.logistic_x - 0.5) * 0.5
-                    
-                    -- 量子态模拟
-                    chaos.quantum_phase = (chaos.quantum_phase + 8.7) % 360
-                    chaos.quantum_state = math.cos(math.rad(chaos.quantum_phase)) * 0.3
-                    local C5 = chaos.quantum_state
-                    
-                    -- Markov链
-                    local transitions = {{0.6, 0.25, 0.1, 0.05}, {0.15, 0.55, 0.2, 0.1}, {0.1, 0.2, 0.5, 0.2}, {0.15, 0.15, 0.2, 0.5}}
-                    local rand = enhanced_random(1, 100, "timing") / 100
-                    local cumsum = 0
-                    for i = 1, 4 do
-                        cumsum = cumsum + transitions[chaos.markov_state][i]
-                        if rand <= cumsum then chaos.markov_state = i break end
-                    end
-                    local markov_outputs = {-0.8, 0.8, -0.4, 0.4}
-                    local C6 = markov_outputs[chaos.markov_state]
-                    
-                    -- 神经网络反预测
-                    local nn_input = {C1, C2, C3, C4, C5, C6}
-                    local nn_output = chaos.neural_bias
-                    for i = 1, math.min(#nn_input, #chaos.neural_weights) do
-                        nn_output = nn_output + chaos.neural_weights[i] * nn_input[i]
-                    end
-                    nn_output = math.tanh(nn_output)
-                    local target = enhanced_random(-100, 100, "timing") / 100
-                    chaos.prediction_error = target - nn_output
-                    for i = 1, #chaos.neural_weights do
-                        if nn_input[i] then
-                            chaos.neural_weights[i] = math.max(-1.5, math.min(1.5, 
-                                chaos.neural_weights[i] + chaos.adaptive_learning_rate * chaos.prediction_error * nn_input[i]))
-                        end
-                    end
-                    local C7 = chaos.prediction_error * 0.6
-                    
-                    -- 分形噪声
-                    local fractal_val = 0
-                    local amplitude = 1.0
-                    local frequency = 1.0
-                    for i = 1, 4 do
-                        chaos.fractal_octaves[i] = (chaos.fractal_octaves[i] + math.sin(globals.curtime() * frequency * 2.3) * 0.1) % 1.0
-                        fractal_val = fractal_val + math.sin(chaos.fractal_octaves[i] * math.pi * 2) * amplitude
-                        amplitude = amplitude * 0.5
-                        frequency = frequency * 2.0
-                    end
-                    local C8 = fractal_val * 0.25
-                    
-                    -- 布朗运动
-                    chaos.brownian_v = chaos.brownian_v * 0.85 + enhanced_random(-100, 100, "timing") / 100 * 0.3
-                    chaos.brownian_x = math.max(-timing_variance, math.min(timing_variance, (chaos.brownian_x + chaos.brownian_v) * 0.95))
-                    local C9 = chaos.brownian_x * 0.3
-                    
-                    -- 熵池混合
-                    chaos.entropy_idx = (chaos.entropy_idx % 8) + 1
-                    chaos.entropy_pool[chaos.entropy_idx] = (chaos.entropy_pool[chaos.entropy_idx] + inject_true_entropy() % 100 / 100) % 1.0
-                    local entropy_mix = 0
-                    for i = 1, 8 do
-                        entropy_mix = entropy_mix + chaos.entropy_pool[i] * math.sin(i * 0.5)
-                    end
-                    local C10 = (entropy_mix / 8 - 0.5) * 0.8
-                    
-                    -- 频率跳变
-                    if globals.tickcount() % chaos.frequency_table[chaos.frequency_hopper] == 0 then
-                        chaos.frequency_hopper = (chaos.frequency_hopper % #chaos.frequency_table) + 1
-                        extra_chaos = extra_chaos + enhanced_random(-timing_variance, timing_variance, "timing") * 0.5
-                    end
-                    
-                    -- 双吸引子系统增强 (交叉耦合)
-                    if not chaos.dual_attractor then
-                        chaos.dual_attractor = {
-                            x1 = 0.1, y1 = 0.1, z1 = 0.1,
-                            x2 = -0.1, y2 = -0.1, z2 = -0.1,
-                            coupling = 0.3,
-                            coupling_mode = 1,
-                            coupling_phase = 0
-                        }
-                    end
-                    local da = chaos.dual_attractor
-                    local dt_da = 0.015
-                    
-                    -- 动态耦合强度
-                    da.coupling_phase = (da.coupling_phase + 1) % 100
-                    if da.coupling_phase == 0 then
-                        da.coupling_mode = (inject_true_entropy() % 4) + 1
-                        da.coupling = 0.2 + (inject_true_entropy() % 40) / 100
-                    end
-                    
-                    -- 吸引子1 (Lorenz型)
-                    local coupling1 = 0
-                    if da.coupling_mode == 1 then
-                        coupling1 = da.coupling * (da.x2 - da.x1)
-                    elseif da.coupling_mode == 2 then
-                        coupling1 = da.coupling * (da.y2 * da.z2 - da.y1 * da.z1)
-                    elseif da.coupling_mode == 3 then
-                        coupling1 = da.coupling * math.sin((da.x2 - da.x1) * 0.5)
-                    else
-                        coupling1 = da.coupling * (da.x2 - da.x1 + da.y2 - da.y1) * 0.5
-                    end
-                    
-                    local dx1 = (10 * (da.y1 - da.x1) + coupling1) * dt_da
-                    local dy1 = (da.x1 * (28 - da.z1) - da.y1) * dt_da
-                    local dz1 = (da.x1 * da.y1 - 2.667 * da.z1) * dt_da
-                    
-                    -- 吸引子2 (Rossler型)
-                    local coupling2 = 0
-                    if da.coupling_mode == 1 then
-                        coupling2 = da.coupling * (da.x1 - da.x2)
-                    elseif da.coupling_mode == 2 then
-                        coupling2 = da.coupling * (da.y1 * da.z1 - da.y2 * da.z2)
-                    elseif da.coupling_mode == 3 then
-                        coupling2 = da.coupling * math.cos((da.x1 - da.x2) * 0.5)
-                    else
-                        coupling2 = da.coupling * (da.x1 - da.x2 + da.y1 - da.y2) * 0.5
-                    end
-                    
-                    local dx2 = (-da.y2 - da.z2 + coupling2) * dt_da * 2
-                    local dy2 = (da.x2 + 0.2 * da.y2) * dt_da * 2
-                    local dz2 = (0.2 + da.z2 * (da.x2 - 5.7)) * dt_da * 2
-                    
-                    da.x1 = math.max(-50, math.min(50, da.x1 + dx1))
-                    da.y1 = math.max(-50, math.min(50, da.y1 + dy1))
-                    da.z1 = math.max(0, math.min(50, da.z1 + dz1))
-                    da.x2 = math.max(-50, math.min(50, da.x2 + dx2))
-                    da.y2 = math.max(-50, math.min(50, da.y2 + dy2))
-                    da.z2 = math.max(0, math.min(50, da.z2 + dz2))
-                    
-                    -- 交叉耦合贡献
-                    local C_DUAL = ((da.x1 - da.x2) * 0.02 + (da.y1 - da.y2) * 0.015 + math.sin((da.z1 - da.z2) * 0.1) * 0.5) * timing_variance * 0.03
-                    
-                    -- 相位贡献
-                    chaos.phase = (chaos.phase + enhanced_random(10, 30, "timing")) % 360
-                    local phase_contrib = math.sin(math.rad(chaos.phase)) * 0.2
-                    
-                    -- 爆发系统
-                    if chaos.burst_cooldown > 0 then
-                        chaos.burst_cooldown = chaos.burst_cooldown - 1
-                        if chaos.burst_active then
-                            extra_chaos = extra_chaos + enhanced_random(-timing_variance, timing_variance, "timing") * (chaos.burst_cooldown / 6)
-                        end
-                    elseif chaos_entropy > 92 then
-                        chaos.burst_active = true
-                        chaos.burst_cooldown = enhanced_random(4, 8, "timing")
-                        extra_chaos = extra_chaos + enhanced_random(-timing_variance * 1.5, timing_variance * 1.5, "timing")
-                    else
-                        chaos.burst_active = false
-                    end
-                    
-                    -- 时间序列反预测
-                    table.insert(chaos.time_series, C1 + C3 + C5)
-                    if #chaos.time_series > 12 then table.remove(chaos.time_series, 1) end
-                    if #chaos.time_series >= 6 then
-                        local predicted = 0
-                        for i = 1, math.min(3, #chaos.time_series - 1) do
-                            predicted = predicted + chaos.time_series[#chaos.time_series - i] * (0.4 / i)
-                        end
-                        local pred_error = math.abs(predicted - chaos.time_series[#chaos.time_series])
-                        if pred_error < timing_variance * 0.2 then
-                            extra_chaos = extra_chaos + enhanced_random(-timing_variance * 2, timing_variance * 2, "timing")
-                            chaos.time_series = {}
-                        end
-                    end
-                    
-                    -- 增强模式检测与反制系统
-                    local pd = chaos.pattern_detector
-                    table.insert(pd.history, state.lr_current_delay or base_delay)
-                    if #pd.history > 16 then table.remove(pd.history, 1) end
-                    
-                    pd.detected = false
-                    local detection_score = 0
-                    
-                    if #pd.history >= 8 then
-                        -- 1. 方差检测
-                        local mean = 0
-                        for _, v in ipairs(pd.history) do mean = mean + v end
-                        mean = mean / #pd.history
-                        local variance = 0
-                        for _, v in ipairs(pd.history) do variance = variance + (v - mean) ^ 2 end
-                        variance = variance / #pd.history
-                        if variance < timing_variance * 0.15 then detection_score = detection_score + 1 end
-                        
-                        -- 2. 多重自相关检测 (检测周期性)
-                        local max_autocorr = 0
-                        for lag = 2, math.min(6, #pd.history - 2) do
-                            local corr = 0
-                            local count = 0
-                            for i = lag + 1, #pd.history do
-                                corr = corr + (pd.history[i] - mean) * (pd.history[i - lag] - mean)
-                                count = count + 1
-                            end
-                            if count > 0 and variance > 0 then
-                                corr = math.abs(corr / (count * variance))
-                                max_autocorr = math.max(max_autocorr, corr)
-                            end
-                        end
-                        if max_autocorr > 0.6 then detection_score = detection_score + 2 end
-                        
-                        -- 3. FFT频谱分析 (检测频率模式)
-                        if #pd.history >= 8 then
-                            local fft_power = 0
-                            for freq = 1, 4 do
-                                local real_part = 0
-                                local imag_part = 0
-                                for i = 1, #pd.history do
-                                    local angle = 2 * math.pi * freq * i / #pd.history
-                                    real_part = real_part + pd.history[i] * math.cos(angle)
-                                    imag_part = imag_part + pd.history[i] * math.sin(angle)
-                                end
-                                fft_power = fft_power + math.sqrt(real_part * real_part + imag_part * imag_part)
-                            end
-                            if fft_power > timing_variance * 4 then detection_score = detection_score + 2 end
-                        end
-                        
-                        -- 4. 熵检测 (低熵=可预测)
-                        local bins = {0, 0, 0, 0, 0}
-                        local bin_width = timing_variance * 0.8
-                        for _, val in ipairs(pd.history) do
-                            local bin_idx = math.min(5, math.max(1, math.floor((val - base_delay + timing_variance * 2) / bin_width) + 1))
-                            bins[bin_idx] = bins[bin_idx] + 1
-                        end
-                        local entropy = 0
-                        for _, count in ipairs(bins) do
-                            if count > 0 then
-                                local p = count / #pd.history
-                                entropy = entropy - p * math.log(p)
-                            end
-                        end
-                        if entropy < 1.0 then detection_score = detection_score + 1 end
-                        
-                        -- 5. 趋势检测 (检测线性模式)
-                        local diffs = {}
-                        for i = 2, math.min(8, #pd.history) do
-                            diffs[#diffs + 1] = pd.history[#pd.history - i + 1] - pd.history[#pd.history - i]
-                        end
-                        if #diffs >= 4 then
-                            local diff_mean = 0
-                            for _, d in ipairs(diffs) do diff_mean = diff_mean + d end
-                            diff_mean = diff_mean / #diffs
-                            local diff_var = 0
-                            for _, d in ipairs(diffs) do diff_var = diff_var + (d - diff_mean) ^ 2 end
-                            diff_var = diff_var / #diffs
-                            if diff_var < timing_variance * 0.08 then detection_score = detection_score + 1 end
-                        end
-                        
-                        -- 综合判定
-                        pd.detected = detection_score >= 3
-                        
-                        if pd.detected then
-                            pd.detection_count = pd.detection_count + 1
-                            if pd.detection_count >= 2 then
-                                -- 触发紧急反制模式
-                                pd.detection_count = 0
-                                pd.history = {}
-                                chaos.emergency_mode = true
-                                chaos.emergency_level = math.min(5, chaos.emergency_level + 1)
-                                chaos.emergency_ticks = enhanced_random(10, 20, "timing")
-                                
-                                -- 极端混沌注入
-                                extra_chaos = extra_chaos + enhanced_random(-timing_variance * 4, timing_variance * 4, "timing")
-                                
-                                -- 完全重置所有混沌系统
-                                chaos.lorenz_x = enhanced_random(-20, 20, "timing")
-                                chaos.lorenz_y = enhanced_random(-20, 20, "timing")
-                                chaos.lorenz_z = enhanced_random(0, 40, "timing")
-                                chaos.rossler.x = enhanced_random(-15, 15, "timing")
-                                chaos.rossler.y = enhanced_random(-15, 15, "timing")
-                                chaos.rossler.z = enhanced_random(0, 25, "timing")
-                                chaos.henon.x = enhanced_random(-1, 1, "timing") / 2
-                                chaos.henon.y = enhanced_random(-1, 1, "timing") / 2
-                                chaos.logistic_x = enhanced_random(20, 80, "timing") / 100
-                                
-                                -- 激活反ML欺骗模式
-                                if not chaos.anti_ml_deception then
-                                    chaos.anti_ml_deception = {
-                                        active = false,
-                                        fake_pattern = {},
-                                        real_hidden = false,
-                                        duration = 0
-                                    }
-                                end
-                                chaos.anti_ml_deception.active = true
-                                chaos.anti_ml_deception.duration = enhanced_random(8, 16, "timing")
-                                
-                                -- 生成假模式
-                                local fake_type = inject_true_entropy() % 4
-                                chaos.anti_ml_deception.fake_pattern = {}
-                                if fake_type == 0 then
-                                    -- 假周期模式
-                                    local fake_period = enhanced_random(2, 5, "timing")
-                                    for i = 1, 10 do
-                                        chaos.anti_ml_deception.fake_pattern[i] = base_delay + math.sin(i * 2 * math.pi / fake_period) * timing_variance * 0.5
-                                    end
-                                elseif fake_type == 1 then
-                                    -- 假线性趋势
-                                    local fake_slope = enhanced_random(-timing_variance, timing_variance, "timing") / 10
-                                    for i = 1, 10 do
-                                        chaos.anti_ml_deception.fake_pattern[i] = base_delay + fake_slope * i
-                                    end
-                                elseif fake_type == 2 then
-                                    -- 假恒定值
-                                    local fake_const = base_delay + enhanced_random(-timing_variance, timing_variance, "timing")
-                                    for i = 1, 10 do
-                                        chaos.anti_ml_deception.fake_pattern[i] = fake_const + enhanced_random(-2, 2, "timing")
-                                    end
-                                else
-                                    -- 假交替模式
-                                    local val1 = base_delay + enhanced_random(-timing_variance, 0, "timing")
-                                    local val2 = base_delay + enhanced_random(0, timing_variance, "timing")
-                                    for i = 1, 10 do
-                                        chaos.anti_ml_deception.fake_pattern[i] = (i % 2 == 0) and val1 or val2
-                                    end
-                                end
-                            end
-                        else
-                            pd.detection_count = math.max(0, pd.detection_count - 1)
-                        end
-                    end
-                    
-                    -- 微抖动
-                    chaos.micro_jitter = chaos.micro_jitter * 0.6 + enhanced_random(-3, 3, "timing") * 0.4
-                    
-                    -- 随机跳跃系统 (完全打破时序模式)
-                    if not chaos.random_jump_cooldown then chaos.random_jump_cooldown = 0 end
-                    local jump_contrib = 0
-                    if chaos.random_jump_cooldown > 0 then
-                        chaos.random_jump_cooldown = chaos.random_jump_cooldown - 1
-                    elseif inject_true_entropy() % 100 < 12 then
-                        -- 触发随机跳跃
-                        chaos.random_jump_cooldown = enhanced_random(6, 15, "timing")
-                        local jump_type = inject_true_entropy() % 5
-                        if jump_type == 0 then
-                            -- 极端跳跃
-                            jump_contrib = enhanced_random(-timing_variance * 3, timing_variance * 3, "timing")
-                        elseif jump_type == 1 then
-                            -- 反向跳跃
-                            jump_contrib = -(chaos.last_delay or base_delay) + base_delay + enhanced_random(-timing_variance, timing_variance, "timing")
-                        elseif jump_type == 2 then
-                            -- 量子跳跃 (使用量子态)
-                            local q_idx = (inject_true_entropy() % 5) + 1
-                            jump_contrib = chaos.quantum_superposition[q_idx] * timing_variance * 2
-                        elseif jump_type == 3 then
-                            -- 零跳跃 (回到基准)
-                            jump_contrib = -chaos.chaos_accumulator * 0.8
-                        else
-                            -- 混沌跳跃 (使用多个吸引子)
-                            jump_contrib = (chaos.lorenz_x * 0.1 + chaos.rossler.x * 0.15 + chaos.henon.x * timing_variance * 0.5)
-                        end
-                        extra_chaos = extra_chaos + jump_contrib
-                    end
-                    
-                    -- 反ML欺骗模式应用
-                    if chaos.anti_ml_deception and chaos.anti_ml_deception.active then
-                        chaos.anti_ml_deception.duration = chaos.anti_ml_deception.duration - 1
-                        if chaos.anti_ml_deception.duration <= 0 then
-                            chaos.anti_ml_deception.active = false
-                        else
-                            -- 注入假模式数据
-                            local fake_idx = (globals.tickcount() % #chaos.anti_ml_deception.fake_pattern) + 1
-                            local fake_influence = chaos.anti_ml_deception.fake_pattern[fake_idx] - base_delay
-                            -- 混合真实混沌和假模式 (让resolver学习到错误模式)
-                            extra_chaos = extra_chaos * 0.4 + fake_influence * 0.6
-                        end
-                    end
-                    
-                    -- 交叉耦合增强
-                    chaos.cross_coupling = (C1 * C2 + C3 * C4 - C5 * C6) * 0.15 + C_DUAL
-                    
-                    -- 混沌累加器 (包含所有混沌源)
-                    chaos.chaos_accumulator = C1 + C2 + C3 + C4 + C5 + C6 + C7 + C8 + C9 + C10 + 
-                                             chaos.cross_coupling + chaos.micro_jitter + jump_contrib
-                    
-                    -- 紧急模式额外增强
-                    if chaos.emergency_mode then
-                        local emergency_boost = enhanced_random(-timing_variance * chaos.emergency_level, 
-                                                               timing_variance * chaos.emergency_level, "timing")
-                        chaos.chaos_accumulator = chaos.chaos_accumulator + emergency_boost
-                    end
-                    
-                    -- 总混沌倍数计算
-                    local total_chaos_mult = 1.0 + smooth_contrib + phase_contrib + 
-                                            math.abs(chaos.chaos_accumulator) * 0.1
-                    total_chaos_mult = total_chaos_mult * variance_mult
-                    total_chaos_mult = math.max(0.3, math.min(3.5, total_chaos_mult))
-                    
-                    -- 最终方差计算
-                    local final_variance = timing_variance * total_chaos_mult
-                    local random_offset = enhanced_random(-final_variance, final_variance, "timing") + extra_chaos
-                    
-                    -- 真熵注入
-                    local true_entropy_offset = (inject_true_entropy() % (math.floor(timing_variance * 2) + 1)) - timing_variance
-                    random_offset = random_offset + true_entropy_offset * 0.3
-                    
-                    -- 混沌健康度调整
-                    if math.abs(random_offset) < timing_variance * 0.2 then
-                        chaos.chaos_health = math.max(0.5, chaos.chaos_health - 0.1)
-                        if chaos.chaos_health < 0.7 then
-                            random_offset = random_offset + enhanced_random(-timing_variance, timing_variance, "timing")
-                        end
-                    else
-                        chaos.chaos_health = math.min(1.0, chaos.chaos_health + 0.05)
-                    end
-                    
-                    state.lr_current_delay = math.max(1, base_delay + random_offset)
-                    chaos.last_delay = state.lr_current_delay
+                state.lr_current_delay = get_random_delay(base_delay, timing_variance)
             else
                 state.lr_current_delay = base_delay
             end
-            state.lr_cycle = 1
+            state.lr_last_flip = state.lr_packets
         elseif globals.chokedcommands() == 0 then
-            state.lr_cycle = state.lr_cycle + 1
+            state.lr_packets = state.lr_packets + 1
         end
         
         state.lr_side = current_side
@@ -3883,11 +3452,11 @@ local function get_yaw_offset_values()
         end
         vals.body_yaw_mode = state_config.body_yaw_mode:get()
         vals.body_yaw_degrees = state_config.body_yaw_degrees:get()
-        vals.body_yaw_jitter_left = state_config.body_yaw_jitter_left:get()
-        vals.body_yaw_jitter_right = state_config.body_yaw_jitter_right:get()
-        vals.body_yaw_jitter_variance = state_config.body_yaw_jitter_variance:get()
-        vals.body_yaw_variance_delay = state_config.body_yaw_variance_delay:get()
-        vals.body_yaw_delay_variance = state_config.body_yaw_delay_variance:get()
+        vals.body_yaw_jitter_left = state_config.body_yaw_jitter_left and state_config.body_yaw_jitter_left:get() or 30
+        vals.body_yaw_jitter_right = state_config.body_yaw_jitter_right and state_config.body_yaw_jitter_right:get() or 30
+        vals.body_yaw_jitter_variance = state_config.body_yaw_jitter_variance and state_config.body_yaw_jitter_variance:get() or 0
+        vals.body_yaw_variance_delay = state_config.body_yaw_variance_delay and state_config.body_yaw_variance_delay:get() or 3
+        vals.body_yaw_delay_variance = state_config.body_yaw_delay_variance and state_config.body_yaw_delay_variance:get() or 0
     return vals
 end
 local function calc_body_yaw(vals, yaw_offset)
@@ -3898,6 +3467,44 @@ local function calc_body_yaw(vals, yaw_offset)
     if type(body_yaw_mode) == "number" then
         body_yaw_mode = ({"Disabled", "Static", "Jitter"})[body_yaw_mode + 1] or "Disabled"
     end
+    
+    
+    local current_state = get_player_state(current_cmd)
+    
+    
+    local state_jitter_multipliers = {
+        ["Stand"] = 1.0,      
+        ["Move"] = 1.15,      
+        ["Crouch"] = 0.85,    
+        ["C-Move"] = 1.25,    
+        ["Air"] = 1.4,        
+        ["C-Air"] = 1.5,      
+        ["Slow"] = 0.75,      
+        ["Safe"] = 0.6,       
+        ["Fakelag"] = 1.3,    
+        ["Freestand"] = 1.2,  
+        ["Manual"] = 0.9,     
+        ["Use"] = 0.5,        
+        ["Global"] = 1.0      
+    }
+    
+    
+    local state_chaos_intensity = {
+        ["Stand"] = 1.0,
+        ["Move"] = 1.1,
+        ["Crouch"] = 0.9,
+        ["C-Move"] = 1.2,
+        ["Air"] = 1.35,
+        ["C-Air"] = 1.45,
+        ["Slow"] = 0.8,
+        ["Safe"] = 0.7,
+        ["Fakelag"] = 1.25,
+        ["Freestand"] = 1.15,
+        ["Manual"] = 0.95,
+        ["Use"] = 0.6,
+        ["Global"] = 1.0
+    }
+    
     if body_yaw_mode == "Disabled" then
         return 0
     elseif body_yaw_mode == "Static" then
@@ -3914,6 +3521,11 @@ local function calc_body_yaw(vals, yaw_offset)
         local MAX_BODY_YAW = 120
         local MIN_DELAY = 1
         local MAX_DELAY = 20
+        
+        
+        local state_multiplier = state_jitter_multipliers[current_state] or 1.0
+        local chaos_multiplier = state_chaos_intensity[current_state] or 1.0
+        jitter_variance = jitter_variance * state_multiplier
         
         if jitter_variance == 0 then
             local desync_type = vals.desync_type
@@ -4157,7 +3769,6 @@ local function calc_body_yaw(vals, yaw_offset)
                     acceleration = 0,
                     jerk = 0
                 },
-                -- V3 Enhanced Unpredictability Systems
                 halvorsen_attractor = {
                     x = 0.1, y = 0.1, z = 0.1,
                     a = 1.89
@@ -4240,15 +3851,15 @@ local function calc_body_yaw(vals, yaw_offset)
         local v2 = state.by_v2
         
         if globals.chokedcommands() == 0 and state.jitter_cycle >= state.jitter_current_delay then
-            state.jitter_current_delay = math.max(MIN_DELAY, math.min(MAX_DELAY, base_delay + (delay_variance > 0 and enhanced_random(-delay_variance, delay_variance, "body_left") or 0)))
+            state.jitter_current_delay = delay_variance > 0 and get_random_delay(base_delay, delay_variance) or base_delay
             
             if jitter_variance > 0 then
-                -- Lorenz attractor (inlined with adaptive parameters)
-                v2.lorenz.x = math.max(-40, math.min(40, v2.lorenz.x + v2.chaos_params.lorenz_sigma * (v2.lorenz.y - v2.lorenz.x) * 0.012))
-                v2.lorenz.y = math.max(-40, math.min(40, v2.lorenz.y + (v2.lorenz.x * (28 - v2.lorenz.z) - v2.lorenz.y) * 0.012))
-                v2.lorenz.z = math.max(0, math.min(50, v2.lorenz.z + (v2.lorenz.x * v2.lorenz.y - 2.667 * v2.lorenz.z) * 0.012))
                 
-                -- Adaptive chaos parameter tuning
+                local lorenz_dt = 0.012 * chaos_multiplier
+                v2.lorenz.x = math.max(-40, math.min(40, v2.lorenz.x + v2.chaos_params.lorenz_sigma * (v2.lorenz.y - v2.lorenz.x) * lorenz_dt))
+                v2.lorenz.y = math.max(-40, math.min(40, v2.lorenz.y + (v2.lorenz.x * (28 - v2.lorenz.z) - v2.lorenz.y) * lorenz_dt))
+                v2.lorenz.z = math.max(0, math.min(50, v2.lorenz.z + (v2.lorenz.x * v2.lorenz.y - 2.667 * v2.lorenz.z) * lorenz_dt))
+                
                 if globals.tickcount() - v2.chaos_params.last_tune > 50 then
                     v2.chaos_params.last_tune = globals.tickcount()
                     table.insert(v2.chaos_params.performance_history, {
@@ -4260,7 +3871,6 @@ local function calc_body_yaw(vals, yaw_offset)
                         table.remove(v2.chaos_params.performance_history, 1)
                     end
                     
-                    -- Tune parameters based on recent performance
                     if #v2.chaos_params.performance_history >= 5 then
                         local avg_diversity = 0
                         local pattern_count = 0
@@ -4270,7 +3880,6 @@ local function calc_body_yaw(vals, yaw_offset)
                         end
                         avg_diversity = avg_diversity / #v2.chaos_params.performance_history
                         
-                        -- If patterns are being detected too often, increase chaos
                         if pattern_count >= 3 then
                             v2.chaos_params.lorenz_sigma = math.min(15, v2.chaos_params.lorenz_sigma + 0.5)
                             v2.chaos_params.rossler_a = math.min(0.4, v2.chaos_params.rossler_a + 0.02)
@@ -4279,34 +3888,34 @@ local function calc_body_yaw(vals, yaw_offset)
                             v2.chaos_params.rossler_a = math.max(0.15, v2.chaos_params.rossler_a - 0.01)
                         end
                         
-                        -- If diversity is low, increase adaptive rate
                         if avg_diversity < 0.4 then
                             v2.chaos_params.adaptive_rate = math.min(0.03, v2.chaos_params.adaptive_rate + 0.005)
                         end
                     end
                 end
                 
-                -- Rossler attractor (inlined with adaptive parameters)
-                v2.rossler.x = math.max(-25, math.min(25, v2.rossler.x + (-v2.rossler.y - v2.rossler.z) * 0.04))
-                v2.rossler.y = math.max(-25, math.min(25, v2.rossler.y + (v2.rossler.x + v2.chaos_params.rossler_a * v2.rossler.y) * 0.04))
-                v2.rossler.z = math.max(0, math.min(35, v2.rossler.z + (0.2 + v2.rossler.z * (v2.rossler.x - 5.7)) * 0.04))
                 
-                -- Duffing oscillator (inlined)
-                v2.duffing.v = math.max(-3, math.min(3, v2.duffing.v + (0.4 * math.cos(globals.curtime() * 1.2) - 0.3 * v2.duffing.v - v2.duffing.x + v2.duffing.x * v2.duffing.x * v2.duffing.x) * 0.015))
-                v2.duffing.x = math.max(-2, math.min(2, v2.duffing.x + v2.duffing.v * 0.015))
+                local rossler_dt = 0.04 * chaos_multiplier
+                v2.rossler.x = math.max(-25, math.min(25, v2.rossler.x + (-v2.rossler.y - v2.rossler.z) * rossler_dt))
+                v2.rossler.y = math.max(-25, math.min(25, v2.rossler.y + (v2.rossler.x + v2.chaos_params.rossler_a * v2.rossler.y) * rossler_dt))
+                v2.rossler.z = math.max(0, math.min(35, v2.rossler.z + (0.2 + v2.rossler.z * (v2.rossler.x - 5.7)) * rossler_dt))
                 
-                -- Chua circuit (inlined)
-                v2.chua.x = math.max(-3, math.min(3, v2.chua.x + 15.6 * (v2.chua.y - v2.chua.x - (v2.chua.x < 0 and 28 * v2.chua.x or -1.143 * v2.chua.x)) * 0.01))
-                v2.chua.y = math.max(-3, math.min(3, v2.chua.y + (v2.chua.x - v2.chua.y + v2.chua.z) * 0.01))
-                v2.chua.z = math.max(-3, math.min(3, v2.chua.z + (-14.87 * v2.chua.y) * 0.01))
                 
-                -- Henon map (inlined)
+                local duffing_dt = 0.015 * chaos_multiplier
+                v2.duffing.v = math.max(-3, math.min(3, v2.duffing.v + (0.4 * math.cos(globals.curtime() * 1.2) - 0.3 * v2.duffing.v - v2.duffing.x + v2.duffing.x * v2.duffing.x * v2.duffing.x) * duffing_dt))
+                v2.duffing.x = math.max(-2, math.min(2, v2.duffing.x + v2.duffing.v * duffing_dt))
+                
+                
+                local chua_dt = 0.01 * chaos_multiplier
+                v2.chua.x = math.max(-3, math.min(3, v2.chua.x + 15.6 * (v2.chua.y - v2.chua.x - (v2.chua.x < 0 and 28 * v2.chua.x or -1.143 * v2.chua.x)) * chua_dt))
+                v2.chua.y = math.max(-3, math.min(3, v2.chua.y + (v2.chua.x - v2.chua.y + v2.chua.z) * chua_dt))
+                v2.chua.z = math.max(-3, math.min(3, v2.chua.z + (-14.87 * v2.chua.y) * chua_dt))
+                
                 v2.henon.y = 0.3 * v2.henon.x
                 v2.henon.x = math.max(-1.5, math.min(1.5, 1 - 1.4 * v2.henon.x * v2.henon.x + v2.henon.y))
                 
                 v2.logistic.x = math.max(0.001, math.min(0.999, v2.logistic.r * v2.logistic.x * (1 - v2.logistic.x)))
                 
-                -- Cross coupling
                 v2.cross_coupling.lorenz_rossler = v2.lorenz.x * 0.1 + v2.rossler.x * 0.1
                 v2.cross_coupling.henon_logistic = v2.henon.x * 0.15 + (v2.logistic.x - 0.5) * 0.2
                 v2.lorenz.y = v2.lorenz.y + v2.cross_coupling.lorenz_rossler * v2.cross_coupling.coupling_strength
@@ -4316,14 +3925,12 @@ local function calc_body_yaw(vals, yaw_offset)
                 v2.phase_osc.p2 = (v2.phase_osc.p2 + enhanced_random(15, 35, "body_right")) % 360
                 v2.phase_osc.p3 = (v2.phase_osc.p3 + enhanced_random(5, 15, "timing")) % 360
                 
-                -- LFSR (inlined)
                 v2.lfsr_state = bit.bxor(v2.lfsr_state, bit.lshift(v2.lfsr_state, 13))
                 v2.lfsr_state = bit.bxor(v2.lfsr_state, bit.rshift(v2.lfsr_state, 17))
                 v2.lfsr_state = bit.bxor(v2.lfsr_state, bit.lshift(v2.lfsr_state, 5))
                 if bit.band(v2.lfsr_state, 1) == 1 then v2.lfsr_state = bit.bxor(bit.rshift(v2.lfsr_state, 1), v2.lfsr_poly)
                 else v2.lfsr_state = bit.rshift(v2.lfsr_state, 1) end
                 
-                -- Store chaos values in table to reduce locals
                 v2.C = {}
                 v2.C[1] = (v2.lorenz.x + v2.lorenz.y) * 0.018
                 v2.C[2] = v2.rossler.x * 0.035
@@ -4353,11 +3960,9 @@ local function calc_body_yaw(vals, yaw_offset)
                 end
                 v2.freq_phase = (globals.curtime() * v2.frequency_hopping.freq_table[v2.frequency_hopping.current_freq] * 15) % 360
                 
-                -- Enhanced Enemy tracking with multi-threat detection
                 v2.temp_me = entity.get_local_player()
                 v2.temp_threat = client.current_threat()
                 
-                -- Multi-threat detection
                 local all_players = entity.get_players(true)
                 v2.enemy_tracking.multi_threat = v2.enemy_tracking.multi_threat or {}
                 v2.enemy_tracking.threat_level = 0
@@ -4388,7 +3993,6 @@ local function calc_body_yaw(vals, yaw_offset)
                     end
                 end
                 
-                -- Primary threat tracking
                 if v2.temp_me and v2.temp_threat and not entity.is_dormant(v2.temp_threat) then
                     v2.temp_pitch, v2.temp_yaw = entity.get_prop(v2.temp_threat, "m_angEyeAngles")
                     if v2.temp_pitch and v2.temp_yaw then
@@ -4402,7 +4006,6 @@ local function calc_body_yaw(vals, yaw_offset)
                             v2.enemy_tracking.aim_variance = v2.enemy_tracking.aim_variance / (#v2.enemy_tracking.last_angles - 1)
                             v2.enemy_tracking.aim_detected = v2.enemy_tracking.aim_variance < 5
                             
-                            -- Enhanced threat response based on multi-threat level
                             local threat_mult = 1.0 + (v2.enemy_tracking.threat_level * 0.15)
                             if v2.enemy_tracking.aim_detected then
                                 v2.adaptive.threat_multiplier = math.min(2.0, v2.adaptive.threat_multiplier + 0.12 * threat_mult)
@@ -4414,13 +4017,11 @@ local function calc_body_yaw(vals, yaw_offset)
                     end
                 end
                 
-                -- Store more chaos values in table
                 v2.C[9] = v2.henon.x * 0.35
                 v2.C[10] = (v2.logistic.x - 0.5) * 0.5
                 v2.C[11] = math.sin(math.rad(v2.freq_phase)) * 0.28
                 local C9, C10, C11 = v2.C[9], v2.C[10], v2.C[11]
                 
-                -- Fractal noise (use v2 storage)
                 v2.fractal.octaves[1] = math.sin(globals.curtime() * 2.1) * 0.5
                 v2.fractal.octaves[2] = math.sin(globals.curtime() * 4.2 * v2.fractal.lacunarity) * 0.25
                 v2.fractal.octaves[3] = math.sin(globals.curtime() * 8.4 * v2.fractal.lacunarity * v2.fractal.lacunarity) * 0.125
@@ -4432,7 +4033,6 @@ local function calc_body_yaw(vals, yaw_offset)
                 v2.C[15] = cc.henon_logistic * 0.35
                 local C13, C14, C15 = v2.C[13], v2.C[14], v2.C[15]
                 
-                -- Hyper chaos
                 v2.hyper_chaos.x = math.max(-50, math.min(50, v2.hyper_chaos.x + (36 * (v2.hyper_chaos.y - v2.hyper_chaos.x) + v2.hyper_chaos.w) * 0.01))
                 v2.hyper_chaos.y = math.max(-50, math.min(50, v2.hyper_chaos.y + (20 * v2.hyper_chaos.y - v2.hyper_chaos.x * v2.hyper_chaos.z) * 0.01))
                 v2.hyper_chaos.z = math.max(0, math.min(70, v2.hyper_chaos.z + (v2.hyper_chaos.x * v2.hyper_chaos.y - 3 * v2.hyper_chaos.z) * 0.01))
@@ -4712,43 +4312,36 @@ local function calc_body_yaw(vals, yaw_offset)
                 end
                 local C_DERIVATIVE = (dc.velocity * 0.4 + dc.acceleration * 0.8 + dc.jerk * 1.2) * 0.5
                 
-                -- V3 Enhanced Chaos Systems (consolidated to reduce locals)
-                local v3 = v2  -- reuse v2 reference
-                v3.C_V3 = {}  -- store all V3 chaos outputs in table
+                local v3 = v2
+                v3.C_V3 = {}
                 
-                -- Halvorsen Attractor
                 local halv = v3.halvorsen_attractor
                 halv.x = math.max(-15, math.min(15, halv.x + (-halv.a * halv.x - 4 * halv.y - 4 * halv.z - halv.y * halv.y) * 0.015))
                 halv.y = math.max(-15, math.min(15, halv.y + (-halv.a * halv.y - 4 * halv.z - 4 * halv.x - halv.z * halv.z) * 0.015))
                 halv.z = math.max(-15, math.min(15, halv.z + (-halv.a * halv.z - 4 * halv.x - 4 * halv.y - halv.x * halv.x) * 0.015))
                 v3.C_V3.HALVORSEN = (halv.x + halv.y - halv.z) * 0.08
                 
-                -- Dadras Attractor
                 local dad = v3.dadras_attractor
                 dad.x = math.max(-20, math.min(20, dad.x + (dad.y - dad.a * dad.x + dad.b * dad.y * dad.z) * 0.008))
                 dad.y = math.max(-20, math.min(20, dad.y + (dad.c * dad.y - dad.x * dad.z + dad.z) * 0.008))
                 dad.z = math.max(-20, math.min(20, dad.z + (dad.d * dad.x * dad.y - dad.e * dad.z) * 0.008))
                 v3.C_V3.DADRAS = (dad.x * 0.06 + dad.y * 0.05 - dad.z * 0.04)
                 
-                -- Rabinovich-Fabrikant Attractor
                 local rab = v3.rabinovich_attractor
                 rab.x = math.max(-3, math.min(3, rab.x + (rab.y * (rab.z - 1 + rab.x * rab.x) + rab.gamma * rab.x) * 0.01))
                 rab.y = math.max(-3, math.min(3, rab.y + (rab.x * (3 * rab.z + 1 - rab.x * rab.x) + rab.gamma * rab.y) * 0.01))
                 rab.z = math.max(-3, math.min(3, rab.z + (-2 * rab.z * (rab.alpha + rab.x * rab.y)) * 0.01))
                 v3.C_V3.RABINOVICH = (rab.x * 0.4 + rab.y * 0.35) * 0.8
                 
-                -- Cellular Automaton (simplified)
                 local ca = v3.cellular_automaton
                 ca.generation = ca.generation + 1
                 ca.state = bit.bxor(bit.bor(bit.lshift(ca.state, 1), bit.rshift(ca.state, 31)), inject_true_entropy() % 65536)
                 v3.C_V3.CELLULAR = ((ca.state % 2000) - 1000) / 1000 * 0.65
                 
-                -- Perlin-like Noise (simplified)
                 local pn = v3.perlin_noise
                 pn.time_offset = pn.time_offset + 0.037
                 v3.C_V3.PERLIN = math.sin(pn.time_offset * 2.3) * 0.3 + math.sin(pn.time_offset * 5.7) * 0.15 + math.sin(pn.time_offset * 11.3) * 0.1
                 
-                -- Temporal Correlation Breaker
                 local tb = v3.temporal_breaker
                 if #tb.time_slots < 8 then for i = 1, 8 do tb.time_slots[i] = enhanced_random(-100, 100, "body_left") / 100 end end
                 tb.slot_idx = (tb.slot_idx % 8) + 1
@@ -4759,7 +4352,6 @@ local function calc_body_yaw(vals, yaw_offset)
                 end
                 v3.C_V3.TEMPORAL = (tb.time_slots[1] + tb.time_slots[3] - tb.time_slots[5] - tb.time_slots[7]) * 0.3
                 
-                -- Adaptive Mutation (simplified)
                 local am = v3.adaptive_mutation
                 if #am.gene_pool < 4 then for i = 1, 4 do am.gene_pool[i] = enhanced_random(-100, 100, "body_left") / 100 end end
                 am.generation = am.generation + 1
@@ -4768,20 +4360,17 @@ local function calc_body_yaw(vals, yaw_offset)
                 end
                 v3.C_V3.MUTATION = (am.gene_pool[1] + am.gene_pool[2] - am.gene_pool[3]) * 0.5
                 
-                -- Spectral Anti-Pattern
                 local sa = v3.spectral_analyzer
                 sa.anti_harmonic = sa.anti_harmonic * 0.9 + (C1 + C_HYPER) * 0.1
                 if math.abs(sa.anti_harmonic) > 0.5 then sa.anti_harmonic = -sa.anti_harmonic * 0.8 end
                 v3.C_V3.SPECTRAL = sa.anti_harmonic * 0.6
                 
-                -- Chaos Resonance (simplified)
                 local cr = v3.chaos_resonance
                 cr.resonators[1] = cr.resonators[1] * 0.95 + v3.C_V3.HALVORSEN * 0.3
                 cr.resonators[2] = cr.resonators[2] * 0.95 + v3.C_V3.DADRAS * 0.3
                 cr.resonators[3] = cr.resonators[3] * 0.95 + v3.C_V3.RABINOVICH * 0.3
                 v3.C_V3.RESONANCE = (cr.resonators[1] + cr.resonators[2] - cr.resonators[3]) * 0.4
                 
-                -- Stochastic Jump
                 local sj = v3.stochastic_jump
                 sj.cooldown = math.max(0, sj.cooldown - 1)
                 if sj.cooldown == 0 and inject_true_entropy() % 100 < 10 then
@@ -4792,13 +4381,11 @@ local function calc_body_yaw(vals, yaw_offset)
                 end
                 v3.C_V3.STOCHASTIC = sj.jump_magnitude * 0.7
                 
-                -- Bifurcation Control
                 local bif = v3.bifurcation_control
                 bif.r_param = bif.r_param + bif.r_direction * 0.005
                 if bif.r_param > 4.0 then bif.r_direction = -1 elseif bif.r_param < 2.8 then bif.r_direction = 1 end
                 v3.C_V3.BIFURCATION = (bif.r_param * v2.logistic.x * (1 - v2.logistic.x) - 0.5) * 0.6
                 
-                -- Anti-ML Defense
                 local aml = v3.anti_ml_defense
                 aml.pattern_switch_cd = aml.pattern_switch_cd - 1
                 if aml.pattern_switch_cd <= 0 then
@@ -4813,7 +4400,6 @@ local function calc_body_yaw(vals, yaw_offset)
                     enhanced_random(-100, 100, "body_left") / 100
                 })[aml.deception_mode + 1] or 0
                 
-                -- 4D Hyperchaos
                 local hc4 = v3.hyperchaos_4d
                 hc4.x = math.max(-50, math.min(50, hc4.x + (hc4.a * (hc4.y - hc4.x) + hc4.w) * 0.008))
                 hc4.y = math.max(-50, math.min(50, hc4.y + (hc4.b * hc4.x - hc4.x * hc4.z) * 0.008))
@@ -4857,7 +4443,6 @@ local function calc_body_yaw(vals, yaw_offset)
                 local base_left = enhanced_random(-jitter_variance, jitter_variance, "body_left")
                 local base_right = enhanced_random(-jitter_variance, jitter_variance, "body_right")
                 
-                -- Chaos diversity monitor - ensures we're using varied sources
                 if not v2.chaos_diversity then
                     v2.chaos_diversity = {
                         source_usage = {},
@@ -4867,7 +4452,6 @@ local function calc_body_yaw(vals, yaw_offset)
                 end
                 local cd = v2.chaos_diversity
                 
-                -- Track which chaos sources are contributing significantly
                 local significant_sources = 0
                 local chaos_contributions = {
                     {name = "lorenz", val = math.abs(C1 or 0)},
@@ -4891,7 +4475,6 @@ local function calc_body_yaw(vals, yaw_offset)
                 
                 cd.diversity_score = significant_sources / #chaos_contributions
                 
-                -- If diversity is too low, inject randomness to wake up dormant systems
                 if cd.diversity_score < 0.3 and globals.tickcount() - cd.last_reset > 20 then
                     cd.last_reset = globals.tickcount()
                     v2.lorenz.x = v2.lorenz.x + enhanced_random(-10, 10, "body_left")
@@ -5064,66 +4647,51 @@ local function calc_body_yaw(vals, yaw_offset)
                             base_left = C_DERIVATIVE * jitter_variance * 4.0
                             base_right = -C_DERIVATIVE * jitter_variance * 3.7
                         elseif break_mode == 21 then
-                            -- V3: Halvorsen + Dadras combo
                             base_left = (v3.C_V3.HALVORSEN + v3.C_V3.DADRAS) * jitter_variance * 3.8
                             base_right = -(v3.C_V3.HALVORSEN - v3.C_V3.DADRAS) * jitter_variance * 3.5
                         elseif break_mode == 22 then
-                            -- V3: Rabinovich extreme sensitivity
                             base_left = v3.C_V3.RABINOVICH * jitter_variance * 4.5
                             base_right = -v3.C_V3.RABINOVICH * jitter_variance * 4.2
                         elseif break_mode == 23 then
-                            -- V3: Cellular automaton burst
                             base_left = v3.C_V3.CELLULAR * jitter_variance * 4.0
                             base_right = -v3.C_V3.CELLULAR * jitter_variance * 3.8
                         elseif break_mode == 24 then
-                            -- V3: Perlin + Temporal combo
                             base_left = (v3.C_V3.PERLIN + v3.C_V3.TEMPORAL) * jitter_variance * 3.5
                             base_right = -(v3.C_V3.PERLIN - v3.C_V3.TEMPORAL) * jitter_variance * 3.2
                         elseif break_mode == 25 then
-                            -- V3: Mutation + Spectral
                             base_left = (v3.C_V3.MUTATION + v3.C_V3.SPECTRAL) * jitter_variance * 3.8
                             base_right = -(v3.C_V3.MUTATION - v3.C_V3.SPECTRAL) * jitter_variance * 3.5
                         elseif break_mode == 26 then
-                            -- V3: Resonance network burst
                             base_left = v3.C_V3.RESONANCE * jitter_variance * 4.2
                             base_right = -v3.C_V3.RESONANCE * jitter_variance * 3.9
                         elseif break_mode == 27 then
-                            -- V3: Stochastic jump extreme
                             base_left = v3.C_V3.STOCHASTIC * jitter_variance * 5.0
                             base_right = -v3.C_V3.STOCHASTIC * jitter_variance * 4.7
                         elseif break_mode == 28 then
-                            -- V3: Bifurcation edge of chaos
                             base_left = v3.C_V3.BIFURCATION * jitter_variance * 4.0
                             base_right = -v3.C_V3.BIFURCATION * jitter_variance * 3.7
                         elseif break_mode == 29 then
-                            -- V3: Anti-ML deception burst
                             base_left = v3.C_V3.ANTIML * jitter_variance * 4.5
                             base_right = -v3.C_V3.ANTIML * jitter_variance * 4.2
                         elseif break_mode == 30 then
-                            -- V3: 4D Hyperchaos
                             base_left = v3.C_V3.HYPERCHAOS4D * jitter_variance * 4.0
                             base_right = -v3.C_V3.HYPERCHAOS4D * jitter_variance * 3.7
                         elseif break_mode == 31 then
-                            -- V3: All new attractors combined
                             base_left = (v3.C_V3.HALVORSEN + v3.C_V3.DADRAS + v3.C_V3.RABINOVICH + v3.C_V3.HYPERCHAOS4D) * jitter_variance * 2.5
                             base_right = -(v3.C_V3.HALVORSEN - v3.C_V3.DADRAS + v3.C_V3.RABINOVICH - v3.C_V3.HYPERCHAOS4D) * jitter_variance * 2.3
                         elseif break_mode == 32 then
-                            -- V3: All new systems combined
                             base_left = (v3.C_V3.CELLULAR + v3.C_V3.PERLIN + v3.C_V3.TEMPORAL + v3.C_V3.MUTATION + v3.C_V3.SPECTRAL) * jitter_variance * 2.0
                             base_right = -(v3.C_V3.RESONANCE + v3.C_V3.STOCHASTIC + v3.C_V3.BIFURCATION + v3.C_V3.ANTIML) * jitter_variance * 2.0
                         elseif break_mode == 33 then
-                            -- Chaos system cross-injection
                             v2.lorenz.x = v2.lorenz.x + C_HYPER * 2
                             v2.rossler.y = v2.rossler.y + C_CHEN * 2
                             v2.henon.x = v2.henon.x + C_QUANTUM_ENT * 1.5
                             base_left = (v2.lorenz.x + v2.rossler.y + v2.henon.x) * jitter_variance * 1.5
                             base_right = -(v2.lorenz.x - v2.rossler.y + v2.henon.x) * jitter_variance * 1.3
                         elseif break_mode == 34 then
-                            -- Time-reversed chaos
                             base_left = -(dr.history[#dr.history - 1] or 0) * 1.8 + enhanced_random(-randomization, randomization, "yaw_left")
                             base_right = (dr.history[#dr.history - 2] or 0) * 1.6 + enhanced_random(-randomization, randomization, "yaw_right")
                         elseif break_mode == 35 then
-                            -- Ensemble weight inversion
                             local inverted_sum = 0
                             for ei = 1, #ensemble.layer_outputs do
                                 inverted_sum = inverted_sum + ensemble.layer_outputs[ei] * (1 - ensemble.meta_weights[ei])
@@ -5131,12 +4699,10 @@ local function calc_body_yaw(vals, yaw_offset)
                             base_left = inverted_sum * jitter_variance * 2.5
                             base_right = -inverted_sum * jitter_variance * 2.2
                         elseif break_mode == 36 then
-                            -- Multi-attractor fusion burst
                             local fusion_val = (C_HYPER + C_CHEN + C_SPROTT + C_AIZAWA + C_THOMAS + C_DUAL) / 6
                             base_left = fusion_val * jitter_variance * 4.5
                             base_right = -fusion_val * jitter_variance * 4.2
                         elseif break_mode == 37 then
-                            -- Quantum decoherence spike
                             local qe = v2.quantum_entangle
                             qe.decoherence = 1.0
                             local collapse_sum = 0
@@ -5146,25 +4712,21 @@ local function calc_body_yaw(vals, yaw_offset)
                             base_left = collapse_sum * jitter_variance * 5.0
                             base_right = -collapse_sum * jitter_variance * 4.7
                         elseif break_mode == 38 then
-                            -- LSTM memory wipe + random
                             dr.v13_lstm.hidden = 0
                             dr.v13_lstm.cell = 0
                             dr.v13_lstm.sequence = {}
                             base_left = enhanced_random(-randomization * 4, randomization * 4, "yaw_left")
                             base_right = enhanced_random(-randomization * 4, randomization * 4, "yaw_right")
                         elseif break_mode == 39 then
-                            -- Adversarial network confusion
                             for ai = 1, #adv.weights do
                                 adv.weights[ai] = -adv.weights[ai]
                             end
                             base_left = dr.C_ADV * jitter_variance * 5.5
                             base_right = -dr.C_ADV * jitter_variance * 5.2
                         elseif break_mode == 40 then
-                            -- Chaos health emergency response
                             if ch and ch.unhealthy_count >= 2 then
                                 base_left = enhanced_random(-randomization * 5, randomization * 5, "yaw_left")
                                 base_right = enhanced_random(-randomization * 5, randomization * 5, "yaw_right")
-                                -- Reinitialize unhealthy systems
                                 v2.lorenz.x, v2.lorenz.y, v2.lorenz.z = 0.1, 0.1, 0.1
                                 v2.rossler.x, v2.rossler.y, v2.rossler.z = 0.1, 0.1, 0.1
                             else
@@ -5222,34 +4784,31 @@ local function calc_body_yaw(vals, yaw_offset)
                 v2.micro_left = v2.micro_left * 0.6 + enhanced_random(-3, 3, "body_left") * 0.4
                 v2.micro_right = v2.micro_right * 0.6 + enhanced_random(-3, 3, "body_right") * 0.4
                 
-                -- Velocity-adaptive chaos scaling enhancement
                 local velocity_factor = 1.0
                 if v2.temp_me then
                     local vx, vy = entity.get_prop(v2.temp_me, "m_vecVelocity")
                     if vx and vy then
                         local velocity = math.sqrt(vx * vx + vy * vy)
                         if velocity > 250 then
-                            velocity_factor = 0.65  -- Reduce chaos when moving fast
+                            velocity_factor = 0.65
                         elseif velocity < 5 then
-                            velocity_factor = 1.45  -- Increase chaos when standing still
+                            velocity_factor = 1.45
                         else
                             velocity_factor = 1.0 + (100 - velocity) / 200
                         end
                     end
                 end
                 
-                -- Lag compensation awareness
                 local ping_factor = 1.0
                 local latency = client.latency()
                 if latency then
-                    if latency > 0.08 then  -- High ping (>80ms)
-                        ping_factor = 1.3  -- More chaos on high ping
-                    elseif latency < 0.02 then  -- Low ping (<20ms)
-                        ping_factor = 0.9  -- Slightly less chaos on low ping
+                    if latency > 0.08 then
+                        ping_factor = 1.3
+                    elseif latency < 0.02 then
+                        ping_factor = 0.9
                     end
                 end
                 
-                -- Chaos system health monitoring
                 if not v2.chaos_health then
                     v2.chaos_health = {
                         system_outputs = {},
@@ -5265,21 +4824,18 @@ local function calc_body_yaw(vals, yaw_offset)
                     ch.last_check = globals.tickcount()
                     ch.unhealthy_count = 0
                     for i, output in ipairs(ch.system_outputs) do
-                        if math.abs(output) < 0.01 then  -- System producing near-zero output
+                        if math.abs(output) < 0.01 then
                             ch.unhealthy_count = ch.unhealthy_count + 1
                         end
                     end
-                    -- If too many systems are unhealthy, inject emergency chaos
                     if ch.unhealthy_count >= 4 then
                         base_left = base_left + enhanced_random(-jitter_variance * 2, jitter_variance * 2, "body_left")
                         base_right = base_right + enhanced_random(-jitter_variance * 2, jitter_variance * 2, "body_right")
-                        -- Reset some chaos systems
                         v2.lorenz.x = enhanced_random(-20, 20, "body_left") / 10
                         v2.rossler.x = enhanced_random(-15, 15, "body_right") / 10
                     end
                 end
                 
-                -- Enhanced cross-coupling with feedback loops
                 local cross_feedback = (C1 * C_HYPER + C3 * C_CHEN - C5 * C_SPROTT) * 0.15
                 v2.lorenz.y = v2.lorenz.y + cross_feedback * 0.3
                 v2.rossler.z = v2.rossler.z + cross_feedback * 0.25
@@ -5322,7 +4878,6 @@ local function calc_body_yaw(vals, yaw_offset)
                 total_left = total_left + C_SINUSOIDAL * jitter_variance * 0.7
                 total_left = total_left + C_DERIVATIVE * jitter_variance * 0.8
                 
-                -- V3 Enhanced Chaos Sources
                 total_left = total_left + v3.C_V3.HALVORSEN * jitter_variance * 0.95
                 total_left = total_left + v3.C_V3.DADRAS * jitter_variance * 0.9
                 total_left = total_left + v3.C_V3.RABINOVICH * jitter_variance * 1.1
@@ -5375,7 +4930,6 @@ local function calc_body_yaw(vals, yaw_offset)
                 total_right = total_right - C_SINUSOIDAL * jitter_variance * 0.65
                 total_right = total_right + C_DERIVATIVE * jitter_variance * 0.7
                 
-                -- V3 Enhanced Chaos Sources (asymmetric for unpredictability)
                 total_right = total_right - v3.C_V3.HALVORSEN * jitter_variance * 0.85
                 total_right = total_right + v3.C_V3.DADRAS * jitter_variance * 0.8
                 total_right = total_right - v3.C_V3.RABINOVICH * jitter_variance * 1.0
@@ -5455,88 +5009,7 @@ local function calc_body_yaw(vals, yaw_offset)
     end
     return 0
 end
-local movement = {
-    globals = {
-        nade = 0,
-        in_ladder = 0
-    }
-}
-local movement_side = false
-local allow_send_packet = true
-local function get_move_yaw(base_type)
-    local me = entity.get_local_player()
-    if not me then return 0 end
-    local pitch, yaw = client.camera_angles()
-    if base_type == "Local view" or base_type == nil then
-        return yaw
-    elseif base_type == "At targets" then
-        local target = client.current_threat()
-        if target then
-            local ex, ey, ez = entity.hitbox_position(target, 0)
-            if ex then
-                local mx, my, mz = client.eye_position()
-                if mx then
-                    local dx, dy = ex - mx, ey - my
-                    return math.deg(math.atan2(dy, dx))
-                end
-            end
-        end
-        return yaw
-    end
-    return yaw
-end
-local function apply_movement(cmd, is_send)
-    local me = entity.get_local_player()
-    if not me then return end
-    local move_amount = 1.01
-    local vx, vy, vz = entity.get_prop(me, "m_vecVelocity")
-    if vx and math.sqrt(vx*vx + vy*vy) > 3 then
-        return
-    end
-    local flags = entity.get_prop(me, "m_fFlags")
-    if bit.band(flags, 4) == 4 then
-        move_amount = move_amount * 2.94117647
-    end
-    if movement_side then
-        cmd.sidemove = cmd.sidemove + move_amount
-    else
-        cmd.sidemove = cmd.sidemove - move_amount
-    end
-    movement_side = not movement_side
-end
-local function should_run_movement(cmd)
-    local me = entity.get_local_player()
-    if not me then return false end
-    if cmd.in_use == 1 then
-        return false
-    end
-    local weapon = entity.get_player_weapon(me)
-    if not weapon then return false end
-    if cmd.in_attack == 1 then
-        local classname = entity.get_classname(weapon)
-        if classname and (classname:find("Grenade") or classname:find("Flashbang")) then
-            movement.globals.nade = globals.tickcount()
-        elseif math.max(entity.get_prop(weapon, "m_flNextPrimaryAttack") or 0, entity.get_prop(me, "m_flNextAttack") or 0) - globals.tickinterval() - globals.curtime() < 0 then
-            return false
-        end
-    end
-    local throw_time = entity.get_prop(weapon, "m_fThrowTime")
-    if movement.globals.nade + 15 == globals.tickcount() or (throw_time and throw_time ~= 0) then
-        return false
-    end
-    local game_rules = entity.get_game_rules()
-    if game_rules and entity.get_prop(game_rules, "m_bFreezePeriod") == 1 then
-        return false
-    end
-    local movetype = entity.get_prop(me, "m_MoveType")
-    if movetype == 9 or movement.globals.in_ladder > globals.tickcount() then
-        return false
-    end
-    if movetype == 10 then
-        return false
-    end
-    return true
-end
+
 local function is_grounded()
     if not native or not native.animstate or not native.animstate.get then
         return true
@@ -5665,6 +5138,21 @@ client.set_event_callback('setup_command', function(cmd)
     local player_state = global_anti_prediction.player_state
     local me = entity.get_local_player()
     if not me or not entity.is_alive(me) then return end
+    
+
+    local aa_mode = menu.antiaim.aa_mode:get()
+    
+    if menu.ragebot.reset_fakelag_on_shot:get() then
+        local current_tick = globals.tickcount()
+        if fakelag_reset.shot_fired or cmd.in_attack == 1 then
+            cmd.allow_send_packet = true
+            cmd.no_choke = true
+            if current_tick - fakelag_reset.shot_tick > 2 then
+                fakelag_reset.shot_fired = false
+            end
+        end
+    end
+    
     local slowmotion_limit = ui.get(slowmotion_limit_ref)
     if slowmotion_limit < 57 then
         local slowmotion_checkbox = ui.get(slowmotion_checkbox_ref)
@@ -5684,6 +5172,7 @@ client.set_event_callback('setup_command', function(cmd)
     local vx, vy, vz = entity.get_prop(me, "m_vecVelocity")
     player_state.velocity = vx and math.sqrt(vx*vx + vy*vy) or 0
     local current_state = get_player_state(cmd)
+    
     local is_freestanding = false
     if menu.antiaim.freestanding and menu.antiaim.freestanding:get() then
         is_freestanding = true
@@ -5844,6 +5333,25 @@ local function toticks(seconds)
     return seconds / globals.tickinterval()
 end
 
+local function update_shift()
+    local player_state = global_anti_prediction.player_state
+    local me = entity.get_local_player()
+    if not me or not entity.is_alive(me) then return end
+    local tickbase = entity.get_prop(me, "m_nTickBase")
+    if not tickbase then return end
+    local latency = client.latency()
+    local shift_amount = math.floor(tickbase - globals.tickcount() - 3 - toticks(latency) * 0.5 + 0.5 * (latency * 10))
+    local dt_limit_ref = ui.reference("RAGE", "Aimbot", "Double tap fake lag limit")
+    local dt_limit = dt_limit_ref and ui.get(dt_limit_ref) or 14
+    local max_shift_limit = -14 + (dt_limit - 1) + 3
+    player_state.shift = shift_amount <= max_shift_limit
+end
+client.set_event_callback('setup_command', update_shift)
+client.set_event_callback('finish_command', function(cmd)
+    local me = entity.get_local_player()
+    if not me or not entity.is_alive(me) then return end
+end)
+
 local defensive_system = {
     max_tickbase = nil,
     tick_target = 0,
@@ -5851,6 +5359,57 @@ local defensive_system = {
         check = 0,
         defensive = 0,
         cmd = 0
+    }
+}
+
+defensive_system.pitch_spin_value = 0
+defensive_system.pitch_jitter_side = false
+defensive_system.pitch_last_static = 0
+
+defensive_system.yaw_spin_value = 0
+defensive_system.yaw_jitter_side = false
+defensive_system.yaw_last_static = 0
+defensive_system.yaw_random_switch = false
+defensive_system.yaw_random_value = 0
+defensive_system.yaw_generated = 0
+defensive_system.jitter_cycle = 0
+defensive_system.jitter_delay = 1
+defensive_system.cached_yaw_mode = nil
+defensive_system.cached_yaw_offset = 0
+defensive_system.cached_yaw_base = nil
+
+defensive_system.jitter_side = false
+defensive_system.threeway_cycle = 0
+defensive_system.threeway_index = 0
+defensive_system.fiveway_cycle = 0
+defensive_system.fiveway_index = 0
+defensive_system.tick_interval = 1
+defensive_system.last_defensive_tick = 0
+defensive_system.tick_counter = 0
+defensive_system.should_update = false
+defensive_system.cached_pitch_mode = nil
+defensive_system.cached_pitch_offset = 0
+
+
+defensive_system.tick_state = {
+    jitter_side = false,
+    random_static_value = 0,
+    last_random_tick = 0,
+    beta_index = 0,
+    beta_counts = {8, 10, 6, 12, 7, 11, 5, 9, 13, 4}  
+}
+
+defensive_system.adaptive = {
+    last_update_tick = 0,
+    current_adaptive_offset = 0,
+    target_offset = 0,
+    direction = 1,
+    change_interval = 0,
+    next_change_tick = 0,
+    chaos_seed = 0x9E3779B9,
+    lorenz = {x = 0.1, y = 0.1, z = 0.1},
+    enemy_aim = {
+        aim_history = {}
     }
 }
 
@@ -5981,15 +5540,10 @@ client.set_event_callback("net_update_end", function()
     defensive_system.update_default()
 end)
 
-defensive_system.pitch_inverted = false
-defensive_system.pitch_random_seed = 31337
-defensive_system.pitch_generated = 0
-defensive_system.pitch_jitter_cycle = 0
-defensive_system.pitch_jitter_delay = 1
+defensive_system.pitch_spin_value = 0
 defensive_system.pitch_jitter_side = false
-defensive_system.yaw_generated = 0
-defensive_system.jitter_cycle = 0
-defensive_system.jitter_delay = 1
+defensive_system.pitch_last_static = 0
+
 defensive_system.jitter_side = false
 defensive_system.threeway_cycle = 0
 defensive_system.threeway_index = 0
@@ -6001,9 +5555,15 @@ defensive_system.tick_counter = 0
 defensive_system.should_update = false
 defensive_system.cached_pitch_mode = nil
 defensive_system.cached_pitch_offset = 0
-defensive_system.cached_yaw_mode = nil
-defensive_system.cached_yaw_offset = 0
-defensive_system.cached_yaw_base = nil
+
+
+defensive_system.tick_state = {
+    jitter_side = false,
+    random_static_value = 0,
+    last_random_tick = 0,
+    beta_index = 0,
+    beta_counts = {8, 10, 6, 12, 7, 11, 5, 9, 13, 4}  
+}
 
 defensive_system.adaptive = {
     last_update_tick = 0,
@@ -6070,14 +5630,12 @@ local function adaptive_chaos_random(min, max)
     local tick = globals.tickcount()
     local time = globals.realtime()
     
-    -- 多重XORShift增强
     state.chaos_seed = bit.bxor(state.chaos_seed, bit.lshift(state.chaos_seed, 13))
     state.chaos_seed = bit.bxor(state.chaos_seed, bit.rshift(state.chaos_seed, 17))
     state.chaos_seed = bit.bxor(state.chaos_seed, bit.lshift(state.chaos_seed, 5))
     state.chaos_seed = bit.bxor(state.chaos_seed, math.floor(time * 1000000) % 999983)
     state.chaos_seed = bit.bxor(state.chaos_seed, tick * 73939)
     
-    -- 初始化多层混沌系统
     if not state.multi_chaos then
         state.multi_chaos = {
             rossler = {x = 0.1, y = 0.1, z = 0.1},
@@ -6105,7 +5663,6 @@ local function adaptive_chaos_random(min, max)
     
     local mc = state.multi_chaos
     
-    -- Lorenz增强版
     local dt = 0.012
     local dx = 10 * (state.lorenz.y - state.lorenz.x) * dt
     local dy = (state.lorenz.x * (28 - state.lorenz.z) - state.lorenz.y) * dt
@@ -6115,39 +5672,32 @@ local function adaptive_chaos_random(min, max)
     state.lorenz.z = math.max(0, math.min(50, state.lorenz.z + dz))
     local C1 = (state.lorenz.x + state.lorenz.y) * 0.02
     
-    -- Rossler吸引子
     mc.rossler.x = math.max(-25, math.min(25, mc.rossler.x + (-mc.rossler.y - mc.rossler.z) * 0.04))
     mc.rossler.y = math.max(-25, math.min(25, mc.rossler.y + (mc.rossler.x + 0.2 * mc.rossler.y) * 0.04))
     mc.rossler.z = math.max(0, math.min(35, mc.rossler.z + (0.2 + mc.rossler.z * (mc.rossler.x - 5.7)) * 0.04))
     local C2 = mc.rossler.x * 0.035
     
-    -- Chen吸引子
     mc.chen.x = math.max(-30, math.min(30, mc.chen.x + 35 * (mc.chen.y - mc.chen.x) * 0.008))
     mc.chen.y = math.max(-30, math.min(30, mc.chen.y + ((28 - 35) * mc.chen.x - mc.chen.x * mc.chen.z + 28 * mc.chen.y) * 0.008))
     mc.chen.z = math.max(0, math.min(50, mc.chen.z + (mc.chen.x * mc.chen.y - 3 * mc.chen.z) * 0.008))
     local C3 = (mc.chen.x + mc.chen.y) * 0.025
     
-    -- Duffing振荡器
     mc.duffing.v = math.max(-3, math.min(3, mc.duffing.v + (0.4 * math.cos(time * 1.2) - 0.3 * mc.duffing.v - mc.duffing.x + mc.duffing.x * mc.duffing.x * mc.duffing.x) * 0.015))
     mc.duffing.x = math.max(-2, math.min(2, mc.duffing.x + mc.duffing.v * 0.015))
     local C4 = mc.duffing.x * 0.4
     
-    -- Henon映射
     local hx_new = 1 - 1.4 * mc.henon.x * mc.henon.x + mc.henon.y
     mc.henon.y = 0.3 * mc.henon.x
     mc.henon.x = math.max(-1.5, math.min(1.5, hx_new))
     local C5 = mc.henon.x * 0.35
     
-    -- Logistic映射
     mc.logistic.x = math.max(0.001, math.min(0.999, mc.logistic.r * mc.logistic.x * (1 - mc.logistic.x)))
     local C6 = (mc.logistic.x - 0.5) * 0.5
     
-    -- Tent映射
     mc.tent.x = mc.tent.x < 0.5 and 1.99 * mc.tent.x or 1.99 * (1 - mc.tent.x)
     mc.tent.x = math.max(0.001, math.min(0.999, mc.tent.x))
     local C7 = (mc.tent.x - 0.5) * 0.7
     
-    -- 量子纠缠模拟
     local qe = mc.quantum
     for i = 1, 5 do
         local pair = qe.entangle[i]
@@ -6163,7 +5713,6 @@ local function adaptive_chaos_random(min, max)
     local C8 = qe.state * 0.3
     qe.state = qe.state * 0.9
     
-    -- 神经网络预测反制
     local nn = mc.neural
     local nn_input = {C1, C2, C3, C4, C5, C6, C7, C8}
     local nn_output = 0
@@ -6178,7 +5727,6 @@ local function adaptive_chaos_random(min, max)
     end
     local C9 = error * 0.6
     
-    -- Markov链
     local mk = mc.markov
     local transitions = {{0.6, 0.25, 0.1, 0.05}, {0.15, 0.55, 0.2, 0.1}, {0.1, 0.2, 0.5, 0.2}, {0.15, 0.15, 0.2, 0.5}}
     local rand = math.random()
@@ -6193,7 +5741,6 @@ local function adaptive_chaos_random(min, max)
     local outputs = {-0.8, 0.8, -0.4, 0.4}
     local C10 = outputs[mk.state]
     
-    -- 分形噪声
     local fn = mc.fractal
     local fractal_val = 0
     local amplitude = 1.0
@@ -6206,7 +5753,6 @@ local function adaptive_chaos_random(min, max)
     end
     local C11 = fractal_val * 0.25
     
-    -- 时间序列反预测
     local ts = mc.time_series
     table.insert(ts.history, C1 + C3 + C5)
     if #ts.history > 12 then table.remove(ts.history, 1) end
@@ -6231,7 +5777,6 @@ local function adaptive_chaos_random(min, max)
     end
     local C12 = #ts.predictions > 0 and -ts.predictions[#ts.predictions] * 1.5 or 0
     
-    -- 模式检测与反制
     local pd = mc.pattern_detector
     table.insert(pd.history, C1)
     if #pd.history > 10 then table.remove(pd.history, 1) end
@@ -6257,7 +5802,6 @@ local function adaptive_chaos_random(min, max)
         end
     end
     
-    -- Anti-ML欺骗
     local aml = mc.anti_ml
     if math.random() < 0.08 then
         aml.mode = (aml.mode + 1) % 5
@@ -6273,7 +5817,6 @@ local function adaptive_chaos_random(min, max)
         if math.random() < 0.15 then aml.deception_active = false end
     end
     
-    -- 自适应权重调整
     local aw = mc.adaptive_weights
     local components = {C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11, C12, C13}
     local weighted_sum = 0
@@ -6281,7 +5824,6 @@ local function adaptive_chaos_random(min, max)
         weighted_sum = weighted_sum + components[i] * aw[i]
     end
     
-    -- 权重自适应
     if #ts.history >= 8 then
         local recent_var = 0
         for i = math.max(1, #ts.history - 4), #ts.history do
@@ -6380,7 +5922,6 @@ local function record_defensive_result(success)
     end
 end
 
--- 混沌健康监控系统
 local chaos_health = {
     last_check_tick = 0,
     stability_buffer = {},
@@ -6410,13 +5951,11 @@ local defensive_cache = {
 local function monitor_chaos_health()
     local tick = globals.tickcount()
     
-    -- 每32 ticks检查一次
     if tick - chaos_health.last_check_tick < 32 then
         return
     end
     chaos_health.last_check_tick = tick
     
-    -- 分析最近的角度变化熵
     if #defensive_cache.angle_variance_history >= 5 then
         local variance_sum = 0
         local variance_squared_sum = 0
@@ -6429,15 +5968,13 @@ local function monitor_chaos_health()
         local mean = variance_sum / #defensive_cache.angle_variance_history
         local variance = (variance_squared_sum / #defensive_cache.angle_variance_history) - (mean * mean)
         
-        -- 计算熵级别（方差越小，熵越低，系统越可预测）
-        local entropy = math.sqrt(math.max(0, variance)) / 20  -- 归一化
+        local entropy = math.sqrt(math.max(0, variance)) / 20
         
         table.insert(chaos_health.stability_buffer, entropy)
         if #chaos_health.stability_buffer > 8 then
             table.remove(chaos_health.stability_buffer, 1)
         end
         
-        -- 计算平均熵
         if #chaos_health.stability_buffer >= 5 then
             local entropy_sum = 0
             for _, e in ipairs(chaos_health.stability_buffer) do
@@ -6445,19 +5982,16 @@ local function monitor_chaos_health()
             end
             chaos_health.entropy_level = entropy_sum / #chaos_health.stability_buffer
             
-            -- 如果熵太低（系统太稳定/可预测），触发紧急混沌注入
             if chaos_health.entropy_level < 0.3 and tick - chaos_health.last_entropy_boost > 64 then
                 defensive_cache.emergency_mode = true
                 defensive_cache.emergency_mode_ticks = adaptive_chaos_random(15, 25)
                 defensive_cache.chaos_injection_level = math.min(3, defensive_cache.chaos_injection_level + 2)
                 chaos_health.last_entropy_boost = tick
                 
-                -- 重置缓冲区
                 chaos_health.stability_buffer = {}
                 defensive_cache.angle_variance_history = {}
                 defensive_cache.pattern_buffer = {}
                 
-                -- 扰动混沌系统状态
                 local state = defensive_system.adaptive
                 if state.lorenz then
                     state.lorenz.x = state.lorenz.x + (math.random() - 0.5) * 15
@@ -6472,7 +6006,6 @@ local function monitor_chaos_health()
         end
     end
     
-    -- 分析激活模式的熵
     if #defensive_cache.pattern_buffer >= 8 then
         local ones = 0
         for _, v in ipairs(defensive_cache.pattern_buffer) do
@@ -6480,18 +6013,95 @@ local function monitor_chaos_health()
         end
         local ratio = ones / #defensive_cache.pattern_buffer
         
-        -- 如果激活比例太极端（接近0或1），增加混沌
         if ratio < 0.2 or ratio > 0.8 then
             defensive_cache.chaos_injection_level = math.min(3, defensive_cache.chaos_injection_level + 1)
         end
     end
     
-    -- 自然衰减混沌注入级别
     if defensive_cache.chaos_injection_level > 0 and not defensive_cache.emergency_mode then
         if tick % 128 == 0 then
             defensive_cache.chaos_injection_level = math.max(0, defensive_cache.chaos_injection_level - 1)
         end
     end
+end
+
+
+local function calculate_defensive_tick_delay(builder_state_items)
+    local tick_mode = builder_state_items.def_tick_mode and builder_state_items.def_tick_mode() or "Static"
+    local tick_state = defensive_system.tick_state
+    local current_tick = globals.tickcount()
+    
+    if tick_mode == "Static" then
+
+        return builder_state_items.def_tick_speed and builder_state_items.def_tick_speed() or 0
+        
+    elseif tick_mode == "Jitter" then
+
+        local tick_min = builder_state_items.def_tick_min and builder_state_items.def_tick_min() or 4
+        local tick_max = builder_state_items.def_tick_max and builder_state_items.def_tick_max() or 10
+        
+        if globals.chokedcommands() == 0 then
+            tick_state.jitter_side = not tick_state.jitter_side
+        end
+        
+        return tick_state.jitter_side and tick_min or tick_max
+        
+    elseif tick_mode == "Random" then
+
+        local tick_min = builder_state_items.def_tick_min and builder_state_items.def_tick_min() or 4
+        local tick_max = builder_state_items.def_tick_max and builder_state_items.def_tick_max() or 10
+        
+        return math.random(math.min(tick_min, tick_max), math.max(tick_min, tick_max))
+        
+    elseif tick_mode == "Random Jitter" then
+
+        local tick_min = builder_state_items.def_tick_min and builder_state_items.def_tick_min() or 4
+        local tick_max = builder_state_items.def_tick_max and builder_state_items.def_tick_max() or 10
+        
+        return math.random(1, 2) == 1 and tick_min or tick_max
+        
+    elseif tick_mode == "Random Trigger" then
+
+        local tick_min = builder_state_items.def_tick_min and builder_state_items.def_tick_min() or 4
+        local tick_max = builder_state_items.def_tick_max and builder_state_items.def_tick_max() or 10
+        
+        return current_tick % math.random(15, 20) > 1 and tick_max or tick_min
+        
+    elseif tick_mode == "Random Static" then
+
+        local tick_min = builder_state_items.def_tick_min and builder_state_items.def_tick_min() or 4
+        local tick_max = builder_state_items.def_tick_max and builder_state_items.def_tick_max() or 10
+        
+        local player_state = global_anti_prediction.player_state
+
+        if not player_state.shift or current_tick - tick_state.last_random_tick > 10 then
+            tick_state.random_static_value = math.random(math.min(tick_min, tick_max), math.max(tick_min, tick_max))
+            tick_state.last_random_tick = current_tick
+        end
+        
+        return tick_state.random_static_value
+        
+    elseif tick_mode == "Cycle" then
+
+        local tick_min = builder_state_items.def_tick_min and builder_state_items.def_tick_min() or 4
+        local tick_max = builder_state_items.def_tick_max and builder_state_items.def_tick_max() or 10
+        local cycle_speed = builder_state_items.def_tick_cycle_speed and builder_state_items.def_tick_cycle_speed() or 10
+        
+
+        local cycle_value = (tick_min + tick_max) / 2 + (tick_max - tick_min) / 2 * math.sin(globals.curtime() * (cycle_speed * 0.2))
+        return math.floor(cycle_value + 0.5)
+        
+    elseif tick_mode == "Beta" then
+
+        tick_state.beta_index = (tick_state.beta_index % #tick_state.beta_counts) + 1
+        return tick_state.beta_counts[tick_state.beta_index]
+        
+    elseif tick_mode == "Adaptive" then
+
+        return nil
+    end
+    
+    return 0
 end
 
 local function calculate_defensive_speed(builder_state_items)
@@ -6503,16 +6113,14 @@ local function calculate_defensive_speed(builder_state_items)
         return defensive_cache.cached_result
     end
     
-    local tick_mode = builder_state_items.def_tick_mode and builder_state_items.def_tick_mode() or "Custom"
+    local tick_mode = builder_state_items.def_tick_mode and builder_state_items.def_tick_mode() or "Static"
     
     if tick % 16 == 0 then
         calibrate_server()
     end
     
-    -- 监控混沌系统健康度
     monitor_chaos_health()
     
-    -- 紧急混沌模式检测
     if defensive_cache.emergency_mode then
         defensive_cache.emergency_mode_ticks = defensive_cache.emergency_mode_ticks - 1
         if defensive_cache.emergency_mode_ticks <= 0 then
@@ -6521,7 +6129,6 @@ local function calculate_defensive_speed(builder_state_items)
         end
     end
     
-    -- 检测连续失败并触发紧急模式
     if defensive_cache.consecutive_failures >= 2 then
         defensive_cache.emergency_mode = true
         defensive_cache.emergency_mode_ticks = adaptive_chaos_random(8, 16)
@@ -6530,7 +6137,9 @@ local function calculate_defensive_speed(builder_state_items)
     
     local final_tick_delay = 0
     
+
     if tick_mode == "Adaptive" then
+
         local adaptive = defensive_system.adaptive
         local me = entity.get_local_player()
         
@@ -6541,7 +6150,6 @@ local function calculate_defensive_speed(builder_state_items)
             base_delay = 7  
         end
         
-        -- 紧急模式下增加基础延迟随机性
         if defensive_cache.emergency_mode then
             base_delay = base_delay + adaptive_chaos_random(-2, 3)
         end
@@ -6560,14 +6168,12 @@ local function calculate_defensive_speed(builder_state_items)
                 table.remove(defensive_cache.velocity_history, 1)
             end
             
-            -- 速度趋势分析
             local velocity_trend = 0
             local velocity_acceleration = 0
             if #defensive_cache.velocity_history >= 3 then
                 velocity_trend = defensive_cache.velocity_history[#defensive_cache.velocity_history] - 
                                 defensive_cache.velocity_history[1]
                 
-                -- 计算加速度
                 if #defensive_cache.velocity_history >= 5 then
                     local recent_trend = defensive_cache.velocity_history[#defensive_cache.velocity_history] - 
                                         defensive_cache.velocity_history[#defensive_cache.velocity_history - 2]
@@ -6577,11 +6183,10 @@ local function calculate_defensive_speed(builder_state_items)
                 end
             end
             
-            -- 基于速度和加速度的自适应调整
             if velocity > 250 then
                 velocity_mod = velocity_trend > 50 and 4 or 3
                 if velocity_acceleration > 30 then
-                    velocity_mod = velocity_mod + 1  -- 快速加速时增加更多
+                    velocity_mod = velocity_mod + 1
                 end
             elseif velocity > 150 then
                 velocity_mod = velocity_trend > 30 and 3 or 2
@@ -6589,7 +6194,6 @@ local function calculate_defensive_speed(builder_state_items)
                 velocity_mod = 1
             elseif velocity < 30 then
                 velocity_mod = -1
-                -- 静止时注入混沌
                 if velocity < 10 and adaptive_chaos_random(1, 100) <= 25 then
                     chaos_mod = adaptive_chaos_random(-2, 2)
                 end
@@ -6598,11 +6202,9 @@ local function calculate_defensive_speed(builder_state_items)
             velocity_mod = math.floor(velocity_mod * server_profile.jitter_mult)
         end
         
-        -- 增强的威胁检测系统
         local threat = client.current_threat()
         local multi_threat_count = 0
         
-        -- 检测多个威胁
         local players = entity.get_players(true)
         if players then
             for _, enemy in ipairs(players) do
@@ -6611,7 +6213,7 @@ local function calculate_defensive_speed(builder_state_items)
                     local mx, my, mz = entity.get_prop(me, "m_vecOrigin")
                     if ex and mx then
                         local dist = math.sqrt((ex-mx)^2 + (ey-my)^2 + (ez-mz)^2)
-                        if dist < 1500 then  -- 1500单位内的敌人
+                        if dist < 1500 then
                             multi_threat_count = multi_threat_count + 1
                         end
                     end
@@ -6651,12 +6253,10 @@ local function calculate_defensive_speed(builder_state_items)
                     
                     local total_variance = yaw_variance + pitch_variance
                     
-                    -- 检测敌人是否锁定我们
                     if total_variance < 3 then
-                        threat_mod = 4  -- 敌人高度锁定
+                        threat_mod = 4
                         defensive_cache.threat_lock_counter = defensive_cache.threat_lock_counter + 1
                         
-                        -- 如果持续被锁定，触发紧急模式
                         if defensive_cache.threat_lock_counter >= 4 then
                             defensive_cache.emergency_mode = true
                             defensive_cache.emergency_mode_ticks = adaptive_chaos_random(10, 18)
@@ -6672,13 +6272,11 @@ local function calculate_defensive_speed(builder_state_items)
                         defensive_cache.threat_lock_counter = 0
                     end
                     
-                    -- 检测突然的瞄准变化（可能是预瞄）
                     if max_yaw_change > 30 or max_pitch_change > 20 then
                         threat_mod = threat_mod + 1
                         chaos_mod = chaos_mod + adaptive_chaos_random(1, 3)
                     end
                     
-                    -- 分析最近的瞄准趋势
                     if #enemy_aim.aim_history >= 6 then
                         local recent_variance = 0
                         for i = #enemy_aim.aim_history - 2, #enemy_aim.aim_history do
@@ -6687,13 +6285,12 @@ local function calculate_defensive_speed(builder_state_items)
                         recent_variance = recent_variance / 3
                         
                         if recent_variance < 2 then
-                            threat_mod = threat_mod + 2  -- 最近瞄准非常稳定
+                            threat_mod = threat_mod + 2
                         elseif recent_variance < 5 then
                             threat_mod = threat_mod + 1
                         end
                     end
                     
-                    -- 多威胁情况下增加混沌
                     if defensive_cache.multi_threat_detected then
                         threat_mod = threat_mod + 1
                         chaos_mod = chaos_mod + adaptive_chaos_random(0, 2)
@@ -6710,25 +6307,22 @@ local function calculate_defensive_speed(builder_state_items)
             ping_mod = 1
         end
         
-        -- 增强的混沌注入系统
         if defensive_cache.chaos_injection_level > 0 then
             chaos_mod = chaos_mod + adaptive_chaos_random(0, defensive_cache.chaos_injection_level * 2)
         end
         
-        -- 紧急模式下的极端混沌
         if defensive_cache.emergency_mode then
             local emergency_chaos = adaptive_chaos_random(-3, 4)
             chaos_mod = chaos_mod + emergency_chaos
             
-            -- 随机反转方向
             if adaptive_chaos_random(1, 100) <= 35 then
                 adaptive.direction = -adaptive.direction
             end
         end
         
         if adaptive.next_change_tick == 0 or tick >= adaptive.next_change_tick then
-            local chaos_val = adaptive_chaos_random(0, 6)  -- 增加混沌范围
-            local direction_change = adaptive_chaos_random(1, 100) <= 35  -- 增加方向改变概率
+            local chaos_val = adaptive_chaos_random(0, 6)
+            local direction_change = adaptive_chaos_random(1, 100) <= 35
             
             if direction_change then
                 adaptive.direction = -adaptive.direction
@@ -6740,17 +6334,15 @@ local function calculate_defensive_speed(builder_state_items)
             local max_offset = defensive_cache.performance_score > 0.7 and 14 or 13
             adaptive.target_offset = math.max(0, math.min(max_offset, adaptive.target_offset))
             
-            -- 自适应变化间隔
-            local change_interval = adaptive_chaos_random(1, 5)  -- 更频繁的变化
+            local change_interval = adaptive_chaos_random(1, 5)
             if threat_mod > 2 then
-                change_interval = 1  -- 高威胁时每tick都变化
+                change_interval = 1
             elseif threat_mod > 0 then
                 change_interval = math.max(1, change_interval - 1)
             elseif threat_mod == 0 then
                 change_interval = change_interval + 1
             end
             
-            -- 紧急模式下更频繁变化
             if defensive_cache.emergency_mode then
                 change_interval = math.max(1, math.floor(change_interval * 0.5))
             end
@@ -6758,17 +6350,15 @@ local function calculate_defensive_speed(builder_state_items)
             adaptive.next_change_tick = tick + change_interval
         end
         
-        -- 动态平滑速度
         local smooth_speed = 0.35
         if threat_mod > 2 then
-            smooth_speed = 0.8  -- 高威胁时快速响应
+            smooth_speed = 0.8
         elseif threat_mod > 0 then
             smooth_speed = 0.5
         elseif threat_mod == 0 then
             smooth_speed = 0.2  
         end
         
-        -- 紧急模式下降低平滑度以增加不可预测性
         if defensive_cache.emergency_mode then
             smooth_speed = math.min(1.0, smooth_speed * 1.5)
         end
@@ -6783,28 +6373,29 @@ local function calculate_defensive_speed(builder_state_items)
         final_tick_delay = math.floor(adaptive.current_adaptive_offset + 0.5)
         final_tick_delay = math.max(0, math.min(14, final_tick_delay))
     else
-        final_tick_delay = builder_state_items.def_tick_speed and builder_state_items.def_tick_speed() or 0
+
+        final_tick_delay = calculate_defensive_tick_delay(builder_state_items)
+        if final_tick_delay == nil then
+            final_tick_delay = 0
+        end
     end
     
     local defensive_window = player_state.defensive.default - final_tick_delay
     local should_activate = tick <= defensive_window
     
-    -- 增强的窗口边缘随机激活
     if not should_activate and tick >= defensive_window - 3 then
         local edge_chance = 30
         if defensive_cache.emergency_mode then
-            edge_chance = 50  -- 紧急模式下更高的边缘激活概率
+            edge_chance = 50
         end
         should_activate = adaptive_chaos_random(1, 100) <= edge_chance
     end
     
-    -- 模式检测：记录激活模式
     table.insert(defensive_cache.pattern_buffer, should_activate and 1 or 0)
     if #defensive_cache.pattern_buffer > 10 then
         table.remove(defensive_cache.pattern_buffer, 1)
     end
     
-    -- 检测重复模式
     if #defensive_cache.pattern_buffer >= 8 then
         local pattern_detected = true
         local first_half = {}
@@ -6823,12 +6414,10 @@ local function calculate_defensive_speed(builder_state_items)
         end
         
         if pattern_detected then
-            -- 检测到重复模式，触发紧急混沌
             defensive_cache.emergency_mode = true
             defensive_cache.emergency_mode_ticks = adaptive_chaos_random(12, 20)
             defensive_cache.pattern_buffer = {}
             
-            -- 随机反转当前决策
             if adaptive_chaos_random(1, 100) <= 60 then
                 should_activate = not should_activate
             end
@@ -6905,7 +6494,8 @@ end
 local function update_defensive_inverters(cmd)
     local sys = defensive_system
     if cmd.chokedcommands == 0 and sys.should_update then
-        defensive_system.pitch_inverted = not defensive_system.pitch_inverted
+        defensive_system.pitch_jitter_side = not defensive_system.pitch_jitter_side
+        defensive_system.yaw_jitter_side = not defensive_system.yaw_jitter_side
     end
 end
 
@@ -6914,162 +6504,77 @@ local function calculate_defensive_pitch(builder_state_items, cmd)
     if not sys.should_update and sys.cached_pitch_mode ~= nil then
         return sys.cached_pitch_mode, sys.cached_pitch_offset
     end
+    
     local pitch_mode = builder_state_items.def_pitch_mode()
-    local pitch1 = builder_state_items.def_pitch_1()
-    local pitch2 = builder_state_items.def_pitch_2()
-    local speed = builder_state_items.def_pitch_speed()
+    local pitch_min = builder_state_items.def_pitch_1 and builder_state_items.def_pitch_1() or -89
+    local pitch_max = builder_state_items.def_pitch_2 and builder_state_items.def_pitch_2() or 89
+    local pitch_static = builder_state_items.def_pitch_static and builder_state_items.def_pitch_static() or 89
+    local speed = builder_state_items.def_pitch_speed and builder_state_items.def_pitch_speed() or 20
+    local jitter_delay = builder_state_items.def_pitch_jitter_delay and builder_state_items.def_pitch_jitter_delay() or 2
+    local wave_type = builder_state_items.def_pitch_wave_type and builder_state_items.def_pitch_wave_type() or "Sine"
+    local wave_period = builder_state_items.def_pitch_wave_period and builder_state_items.def_pitch_wave_period() or 30
+    
     if pitch_mode == "Off" then
         sys.cached_pitch_mode = nil
         sys.cached_pitch_offset = 0
         return nil
     end
-    local result_pitch = 0
+    
+    local result_pitch = 89
     local result_mode = "Custom"
     
-    -- 增强的混沌因子系统
-    local chaos_factor = 0
-    local micro_jitter = adaptive_chaos_random(-2, 2)  -- 微抖动
-    local time_based_chaos = math.sin(globals.realtime() * 13.7) * adaptive_chaos_random(2, 5)
-    
-    if defensive_cache.emergency_mode then
-        chaos_factor = adaptive_chaos_random(-12, 12) + time_based_chaos
-    elseif defensive_cache.chaos_injection_level > 0 then
-        chaos_factor = adaptive_chaos_random(-6, 6) + micro_jitter
-    else
-        chaos_factor = micro_jitter + time_based_chaos * 0.3
-    end
-    
-    -- 添加基于tick的随机偏移
-    local tick_chaos = (globals.tickcount() % 7) * adaptive_chaos_random(-1, 1)
-    chaos_factor = chaos_factor + tick_chaos
-    
     if pitch_mode == "Static" then
-        -- 静态模式：固定pitch + 增强混沌
-        local static_variance = adaptive_chaos_random(-3, 3)
-        local static_time_chaos = math.cos(globals.realtime() * 11.3) * adaptive_chaos_random(1, 4)
-        result_pitch = pitch1 + chaos_factor + static_variance + static_time_chaos
-        
-        -- 紧急模式下额外随机偏移
-        if defensive_cache.emergency_mode then
-            result_pitch = result_pitch + adaptive_chaos_random(-8, 8)
-        end
-        
-    elseif pitch_mode == "Random" then
-        -- 随机模式：在pitch1-pitch2范围内完全随机 + 多层混沌
-        if cmd and cmd.chokedcommands == 0 then
-            local range = pitch2 - pitch1 + 1
-            result_pitch = pitch1 + adaptive_chaos_random(0, range - 1)
-            defensive_system.pitch_generated = result_pitch
-        else
-            result_pitch = defensive_system.pitch_generated
-        end
-        
-        -- 多层随机增强
-        local random_layer1 = adaptive_chaos_random(-4, 4)
-        local random_layer2 = math.sin(globals.realtime() * 17.9) * adaptive_chaos_random(2, 6)
-        local random_tick_mod = (globals.tickcount() % 11) * adaptive_chaos_random(-1, 1)
-        result_pitch = result_pitch + chaos_factor * 0.5 + random_layer1 + random_layer2 + random_tick_mod
-        
-        -- 紧急模式下极端随机
-        if defensive_cache.emergency_mode then
-            result_pitch = result_pitch + adaptive_chaos_random(-10, 10)
-        end
+        result_pitch = pitch_static
         
     elseif pitch_mode == "Jitter" then
-        -- 抖动模式：在pitch1和pitch2之间快速切换，延迟可变 + 增强混沌
+
         if cmd and cmd.chokedcommands == 0 then
-            defensive_system.pitch_jitter_cycle = defensive_system.pitch_jitter_cycle + 1
-            if defensive_system.pitch_jitter_cycle >= defensive_system.pitch_jitter_delay then
-                defensive_system.pitch_jitter_cycle = 0
-                defensive_system.pitch_jitter_side = not defensive_system.pitch_jitter_side
-                local delay_min = builder_state_items.def_pitch_jitter_min and builder_state_items.def_pitch_jitter_min() or 1
-                local delay_max = builder_state_items.def_pitch_jitter_max and builder_state_items.def_pitch_jitter_max() or 3
-                defensive_system.pitch_jitter_delay = adaptive_chaos_random(delay_min, delay_max)
+            sys.pitch_jitter_cycle = (sys.pitch_jitter_cycle or 0) + 1
+            if sys.pitch_jitter_cycle >= jitter_delay then
+                sys.pitch_jitter_cycle = 0
+                sys.pitch_jitter_side = not sys.pitch_jitter_side
             end
         end
+        result_pitch = sys.pitch_jitter_side and pitch_max or pitch_min
         
-        result_pitch = (defensive_system.pitch_jitter_side and pitch2 or pitch1) + chaos_factor
+    elseif pitch_mode == "Random" then
+
+        result_pitch = pitch_min + math.random() * (pitch_max - pitch_min)
         
-        -- Jitter增强：添加微抖动和时间变化
-        local jitter_micro = adaptive_chaos_random(-3, 3)
-        local jitter_time_var = math.sin(globals.realtime() * 19.7) * adaptive_chaos_random(2, 5)
-        result_pitch = result_pitch + jitter_micro + jitter_time_var
-        
-        -- 紧急模式下随机跳过jitter周期并增加混沌
-        if defensive_cache.emergency_mode then
-            if adaptive_chaos_random(1, 100) <= 20 then
-                defensive_system.pitch_jitter_side = not defensive_system.pitch_jitter_side
-            end
-            result_pitch = result_pitch + adaptive_chaos_random(-7, 7)
+    elseif pitch_mode == "Spin" then
+
+        sys.pitch_spin_value = sys.pitch_spin_value or pitch_min
+        local min_v = math.min(pitch_min, pitch_max)
+        local max_v = math.max(pitch_min, pitch_max)
+        if sys.pitch_spin_value < max_v then
+            sys.pitch_spin_value = sys.pitch_spin_value + speed * 0.1
+        else
+            sys.pitch_spin_value = min_v
         end
+        result_pitch = sys.pitch_spin_value
+        
+    elseif pitch_mode == "Random Static" then
+
+        local player_state = global_anti_prediction.player_state
+        if not player_state.shift then
+            sys.pitch_random_static = pitch_min + math.random() * (pitch_max - pitch_min)
+        end
+        result_pitch = sys.pitch_random_static or pitch_min
         
     elseif pitch_mode == "Wave" then
-        -- 波浪模式：3层不同频率波浪叠加 + 随机相位偏移
-        local time = globals.curtime() * speed * 0.1
+
+        local period = wave_period / 100
+        local t = (globals.realtime() % period) / period
         
-        -- 添加随机相位偏移使波浪不可预测
-        local phase_offset1 = math.sin(globals.realtime() * 5.3) * 0.5
-        local phase_offset2 = math.cos(globals.realtime() * 7.9) * 0.3
-        local phase_offset3 = math.sin(globals.realtime() * 13.1) * 0.2
-        
-        local wave1 = math.sin((time + phase_offset1) * math.pi * 2)
-        local wave2 = math.sin((time + phase_offset2) * math.pi * 4.3) * 0.5
-        local wave3 = math.sin((time + phase_offset3) * math.pi * 7.1) * 0.25
-        local combined_wave = (wave1 + wave2 + wave3) / 1.75
-        
-        result_pitch = pitch1 + (pitch2 - pitch1) * (combined_wave * 0.5 + 0.5) + chaos_factor
-        
-        -- 波浪模式额外随机层
-        local wave_variance = adaptive_chaos_random(-3, 3)
-        local wave_tick_mod = (globals.tickcount() % 13) * adaptive_chaos_random(-1, 1)
-        result_pitch = result_pitch + wave_variance + wave_tick_mod
-        
-        -- 紧急模式下扰动波浪
-        if defensive_cache.emergency_mode then
-            result_pitch = result_pitch + adaptive_chaos_random(-9, 9)
+        if wave_type == "Sine" then
+            t = (1 - math.cos(t * math.pi * 2)) * 0.5
+        elseif wave_type == "Triangle" then
+            t = math.abs(t * 2 - 1)
+        elseif wave_type == "Saw" then
+            t = t
         end
         
-    elseif pitch_mode == "Chaos" then
-        -- 完全混沌模式：在pitch1到pitch2范围内随机 + 多层额外混沌
-        if cmd and cmd.chokedcommands == 0 then
-            -- 使用pitch1和pitch2定义混沌范围
-            local chaos_min = math.min(pitch1, pitch2)
-            local chaos_max = math.max(pitch1, pitch2)
-            -- 如果范围太小，扩展到至少30度
-            if chaos_max - chaos_min < 30 then
-                local center = (chaos_min + chaos_max) / 2
-                chaos_min = math.max(-89, center - 15)
-                chaos_max = math.min(89, center + 15)
-            end
-            result_pitch = adaptive_chaos_random(chaos_min, chaos_max)
-            defensive_system.pitch_generated = result_pitch
-        else
-            result_pitch = defensive_system.pitch_generated
-        end
-        
-        -- 多层混沌增强
-        local range_size = math.abs(pitch2 - pitch1)
-        local extra_chaos = math.min(15, math.floor(range_size * 0.3))
-        local chaos_layer1 = adaptive_chaos_random(-extra_chaos, extra_chaos)
-        local chaos_layer2 = math.sin(globals.realtime() * 23.7) * adaptive_chaos_random(3, 8)
-        local chaos_layer3 = math.cos(globals.realtime() * 31.3) * adaptive_chaos_random(2, 6)
-        local chaos_tick_layer = (globals.tickcount() % 17) * adaptive_chaos_random(-2, 2)
-        
-        result_pitch = result_pitch + chaos_layer1 + chaos_layer2 + chaos_layer3 + chaos_tick_layer
-        
-        -- 紧急模式下极端混沌
-        if defensive_cache.emergency_mode then
-            result_pitch = result_pitch + adaptive_chaos_random(-15, 15)
-            -- 随机完全重新生成
-            if adaptive_chaos_random(1, 100) <= 25 then
-                result_pitch = adaptive_chaos_random(-89, 89)
-            end
-        end
-    end
-    
-    -- 多威胁情况下增加pitch抖动
-    if defensive_cache.multi_threat_detected then
-        result_pitch = result_pitch + adaptive_chaos_random(-3, 3)
+        result_pitch = pitch_min + (pitch_max - pitch_min) * t
     end
     
     result_pitch = math.max(-89, math.min(89, result_pitch))
@@ -7083,258 +6588,111 @@ local function calculate_defensive_yaw(builder_state_items, freestand_side, cmd)
     if not sys.should_update and sys.cached_yaw_mode ~= nil then
         return sys.cached_yaw_mode, sys.cached_yaw_offset, sys.cached_yaw_base
     end
+    
     local yaw_mode = builder_state_items.def_yaw_mode()
-    local yaw_offset = builder_state_items.def_yaw_offset()
-    local yaw_left = builder_state_items.def_yaw_left()
-    local yaw_right = builder_state_items.def_yaw_right()
-    local speed = builder_state_items.def_yaw_speed()
+    local yaw_static = builder_state_items.def_yaw_static and builder_state_items.def_yaw_static() or 0
+    local yaw_min = builder_state_items.def_yaw_min and builder_state_items.def_yaw_min() or -90
+    local yaw_max = builder_state_items.def_yaw_max and builder_state_items.def_yaw_max() or 90
+    local speed = builder_state_items.def_yaw_speed and builder_state_items.def_yaw_speed() or 20
+    local jitter_delay = builder_state_items.def_yaw_jitter_delay and builder_state_items.def_yaw_jitter_delay() or 2
+    local cycle_invert = builder_state_items.def_yaw_cycle_invert and builder_state_items.def_yaw_cycle_invert() or false
+    local clock_step = builder_state_items.def_yaw_clock_step and builder_state_items.def_yaw_clock_step() or 30
+    local clock_jitter = builder_state_items.def_yaw_clock_jitter and builder_state_items.def_yaw_clock_jitter() or 15
+    
     if yaw_mode == "Off" then
         sys.cached_yaw_mode = nil
         sys.cached_yaw_offset = 0
         sys.cached_yaw_base = nil
         return nil, nil, nil
     end
+    
     local result_yaw_offset = 0
     local result_yaw_mode = "180"
     local result_yaw_base = nil
     local sign_multiplier = (freestand_side == -1) and -1 or 1
     
-    -- 增强的混沌因子系统
-    local chaos_factor = 0
-    local micro_jitter = adaptive_chaos_random(-3, 3)
-    local time_based_chaos = math.sin(globals.realtime() * 15.7) * adaptive_chaos_random(3, 7)
-    local tick_chaos = (globals.tickcount() % 9) * adaptive_chaos_random(-2, 2)
-    
-    if defensive_cache.emergency_mode then
-        chaos_factor = adaptive_chaos_random(-15, 15) + time_based_chaos
-        -- 紧急模式下随机反转侧面
-        if adaptive_chaos_random(1, 100) <= 30 then
-            sign_multiplier = -sign_multiplier
-        end
-    elseif defensive_cache.chaos_injection_level > 0 then
-        chaos_factor = adaptive_chaos_random(-8, 8) + micro_jitter
-    else
-        chaos_factor = micro_jitter + time_based_chaos * 0.4
-    end
-    
-    chaos_factor = chaos_factor + tick_chaos
-    
-    -- 威胁锁定时增加混沌
-    if defensive_cache.threat_lock_counter > 2 then
-        chaos_factor = chaos_factor + adaptive_chaos_random(-10, 10)
-    end
-    
     if yaw_mode == "Static" then
-        -- 静态模式增强：基础偏移 + 多层混沌
-        local static_variance = adaptive_chaos_random(-4, 4)
-        local static_time_var = math.cos(globals.realtime() * 12.9) * adaptive_chaos_random(2, 6)
-        result_yaw_offset = yaw_offset * sign_multiplier + chaos_factor + static_variance + static_time_var
-        
-        -- 紧急模式下额外偏移
-        if defensive_cache.emergency_mode then
-            result_yaw_offset = result_yaw_offset + adaptive_chaos_random(-12, 12)
-        end
-        
-    elseif yaw_mode == "Spin" then
-        -- 增强旋转模式：动态速度 + 多层非线性变化
-        local speed_variance = adaptive_chaos_random(-3, 3) * 0.1  -- ±0.3的速度波动
-        local dynamic_speed = speed + speed_variance
-        
-        -- 随机方向反转（小概率）
-        if adaptive_chaos_random(1, 100) <= 8 then
-            dynamic_speed = -dynamic_speed
-        end
-        
-        local base_spin = ((globals.curtime() * (dynamic_speed * 12)) % 360)
-        
-        -- 多层非线性旋转增强
-        local chaos_spin1 = math.sin(globals.curtime() * 7.3) * 30
-        local chaos_spin2 = math.cos(globals.curtime() * 11.7) * adaptive_chaos_random(10, 25)
-        local chaos_spin3 = math.sin(globals.curtime() * 19.3) * adaptive_chaos_random(5, 15)
-        local tick_spin_mod = (globals.tickcount() % 11) * adaptive_chaos_random(-3, 3)
-        
-        result_yaw_offset = (base_spin + chaos_spin1 + chaos_spin2 + chaos_spin3 + tick_spin_mod + chaos_factor) * sign_multiplier
-        
-        -- 紧急模式下随机跳跃角度
-        if defensive_cache.emergency_mode then
-            result_yaw_offset = result_yaw_offset + adaptive_chaos_random(-30, 30)
-            -- 随机完全改变旋转方向
-            if adaptive_chaos_random(1, 100) <= 15 then
-                result_yaw_offset = -result_yaw_offset
-            end
-        end
+        result_yaw_offset = yaw_static * sign_multiplier
         
     elseif yaw_mode == "Jitter" then
-        -- 增强Jitter模式：可变延迟 + 多层混沌
+
         if cmd and cmd.chokedcommands == 0 then
-            defensive_system.jitter_cycle = defensive_system.jitter_cycle + 1
-            if defensive_system.jitter_cycle >= defensive_system.jitter_delay then
-                defensive_system.jitter_cycle = 0
-                defensive_system.jitter_side = not defensive_system.jitter_side
-                local delay_min = builder_state_items.def_jitter_delay_min()
-                local delay_max = builder_state_items.def_jitter_delay_max()
-                defensive_system.jitter_delay = adaptive_chaos_random(delay_min, delay_max)
+            sys.yaw_jitter_cycle = (sys.yaw_jitter_cycle or 0) + 1
+            if sys.yaw_jitter_cycle >= jitter_delay then
+                sys.yaw_jitter_cycle = 0
+                sys.yaw_jitter_side = not sys.yaw_jitter_side
             end
         end
+        result_yaw_offset = (sys.yaw_jitter_side and yaw_max or yaw_min) * sign_multiplier
         
-        result_yaw_offset = (defensive_system.jitter_side and yaw_left or yaw_right) * sign_multiplier + chaos_factor
-        
-        -- Jitter增强：微抖动和时间变化
-        local jitter_micro = adaptive_chaos_random(-4, 4)
-        local jitter_time_var = math.sin(globals.realtime() * 21.3) * adaptive_chaos_random(3, 8)
-        local jitter_tick_mod = (globals.tickcount() % 13) * adaptive_chaos_random(-2, 2)
-        result_yaw_offset = result_yaw_offset + jitter_micro + jitter_time_var + jitter_tick_mod
-        
-        -- 紧急模式下随机跳过jitter周期并增加混沌
-        if defensive_cache.emergency_mode then
-            if adaptive_chaos_random(1, 100) <= 20 then
-                defensive_system.jitter_side = not defensive_system.jitter_side
-            end
-            result_yaw_offset = result_yaw_offset + adaptive_chaos_random(-15, 15)
-        end
     elseif yaw_mode == "Random" then
-        -- 增强随机模式：完全随机 + 多层混沌
-        if cmd and cmd.chokedcommands == 0 then
-            defensive_system.yaw_generated = adaptive_chaos_random(-yaw_offset, yaw_offset)
+
+        result_yaw_offset = (yaw_min + math.random() * (yaw_max - yaw_min)) * sign_multiplier
+        
+    elseif yaw_mode == "Spin" then
+
+        sys.yaw_spin_value = sys.yaw_spin_value or yaw_min
+        local min_v = math.min(yaw_min, yaw_max)
+        local max_v = math.max(yaw_min, yaw_max)
+        if sys.yaw_spin_value < max_v then
+            sys.yaw_spin_value = sys.yaw_spin_value + speed * 0.5
+        else
+            sys.yaw_spin_value = min_v
         end
-        result_yaw_offset = defensive_system.yaw_generated * sign_multiplier + chaos_factor
+        result_yaw_offset = sys.yaw_spin_value * sign_multiplier
         
-        -- 随机模式额外混沌层
-        local random_layer1 = adaptive_chaos_random(-6, 6)
-        local random_layer2 = math.sin(globals.realtime() * 25.7) * adaptive_chaos_random(4, 10)
-        local random_tick_mod = (globals.tickcount() % 15) * adaptive_chaos_random(-2, 2)
-        result_yaw_offset = result_yaw_offset + random_layer1 + random_layer2 + random_tick_mod
-        
-        -- 紧急模式下极端随机
-        if defensive_cache.emergency_mode then
-            result_yaw_offset = result_yaw_offset + adaptive_chaos_random(-20, 20)
-        end
-        
-    elseif yaw_mode == "3-Way" then
-        -- 增强3-Way模式：循环角度 + 随机跳跃 + 混沌
-        if cmd and cmd.chokedcommands == 0 then
-            defensive_system.threeway_cycle = defensive_system.threeway_cycle + 1
-            local delay = builder_state_items.def_3way_delay()
-            if defensive_system.threeway_cycle >= delay then
-                defensive_system.threeway_cycle = 0
-                defensive_system.threeway_index = (defensive_system.threeway_index + 1) % 3
-                -- 紧急模式下随机跳跃索引
-                if defensive_cache.emergency_mode and adaptive_chaos_random(1, 100) <= 25 then
-                    defensive_system.threeway_index = adaptive_chaos_random(0, 2)
-                end
-            end
-        end
-        local angles = {
-            builder_state_items.def_3way_angle1(),
-            builder_state_items.def_3way_angle2(),
-            builder_state_items.def_3way_angle3()
-        }
-        result_yaw_offset = angles[defensive_system.threeway_index + 1] * sign_multiplier + chaos_factor
-        
-        -- 3-Way增强：每个角度添加随机偏移
-        local threeway_variance = adaptive_chaos_random(-5, 5)
-        local threeway_time_var = math.sin(globals.realtime() * 17.9) * adaptive_chaos_random(3, 7)
-        local threeway_tick_mod = (globals.tickcount() % 11) * adaptive_chaos_random(-2, 2)
-        result_yaw_offset = result_yaw_offset + threeway_variance + threeway_time_var + threeway_tick_mod
-        
-        -- 紧急模式下额外混沌
-        if defensive_cache.emergency_mode then
-            result_yaw_offset = result_yaw_offset + adaptive_chaos_random(-18, 18)
+    elseif yaw_mode == "Cycle Spin" then
+
+        local t = math.sin(globals.curtime() * (jitter_delay * 0.2)) * 0.5 + 0.5
+        local full = yaw_max - yaw_min
+        if cycle_invert then
+            result_yaw_offset = (yaw_min + full * t) * sign_multiplier
+        else
+            result_yaw_offset = (180 + yaw_min + full * t) * sign_multiplier
         end
         
-    elseif yaw_mode == "5-Way" then
-        -- 增强5向模式：5个角度循环 + 随机跳跃 + 多层混沌
-        if cmd and cmd.chokedcommands == 0 then
-            defensive_system.fiveway_cycle = defensive_system.fiveway_cycle + 1
-            local delay = builder_state_items.def_5way_delay and builder_state_items.def_5way_delay() or 2
-            if defensive_system.fiveway_cycle >= delay then
-                defensive_system.fiveway_cycle = 0
-                defensive_system.fiveway_index = (defensive_system.fiveway_index + 1) % 5
-                -- 紧急模式下随机跳跃索引
-                if defensive_cache.emergency_mode and adaptive_chaos_random(1, 100) <= 30 then
-                    defensive_system.fiveway_index = adaptive_chaos_random(0, 4)
-                end
-            end
+    elseif yaw_mode == "Random Static" then
+
+        local player_state = global_anti_prediction.player_state
+        if not player_state.shift then
+            sys.yaw_random_static = yaw_min + math.random() * (yaw_max - yaw_min)
         end
-        local angles = {
-            builder_state_items.def_5way_angle1 and builder_state_items.def_5way_angle1() or -90,
-            builder_state_items.def_5way_angle2 and builder_state_items.def_5way_angle2() or -45,
-            builder_state_items.def_5way_angle3 and builder_state_items.def_5way_angle3() or 0,
-            builder_state_items.def_5way_angle4 and builder_state_items.def_5way_angle4() or 45,
-            builder_state_items.def_5way_angle5 and builder_state_items.def_5way_angle5() or 90
-        }
-        result_yaw_offset = angles[defensive_system.fiveway_index + 1] * sign_multiplier + chaos_factor
+        result_yaw_offset = (sys.yaw_random_static or yaw_min) * sign_multiplier
         
-        -- 5-Way增强：每个角度添加随机偏移
-        local fiveway_variance = adaptive_chaos_random(-6, 6)
-        local fiveway_time_var = math.sin(globals.realtime() * 23.1) * adaptive_chaos_random(4, 9)
-        local fiveway_tick_mod = (globals.tickcount() % 17) * adaptive_chaos_random(-3, 3)
-        result_yaw_offset = result_yaw_offset + fiveway_variance + fiveway_time_var + fiveway_tick_mod
-        
-        -- 紧急模式下额外混沌
-        if defensive_cache.emergency_mode then
-            result_yaw_offset = result_yaw_offset + adaptive_chaos_random(-20, 20)
+    elseif yaw_mode == "Flick" then
+
+        local flick_value = globals.tickcount() % math.random(16, 20) > 1 and yaw_max or yaw_min
+
+        if cmd and cmd.sidemove and cmd.sidemove > 0 then
+            result_yaw_offset = flick_value * sign_multiplier
+        else
+            result_yaw_offset = -flick_value * sign_multiplier
         end
         
-    elseif yaw_mode == "L&R Random" then
-        -- 增强左右随机模式：在left和right范围内完全随机 + 多层混沌
-        if cmd and cmd.chokedcommands == 0 then
-            local range_min = math.min(yaw_left, yaw_right)
-            local range_max = math.max(yaw_left, yaw_right)
-            defensive_system.yaw_generated = adaptive_chaos_random(range_min, range_max)
-        end
-        result_yaw_offset = defensive_system.yaw_generated * sign_multiplier + chaos_factor
+    elseif yaw_mode == "Clock" then
+
+        local base_rotation = (globals.realtime() * (speed * 80)) % 360
         
-        -- L&R Random增强：多层随机变化
-        local lr_random_layer1 = adaptive_chaos_random(-7, 7)
-        local lr_random_layer2 = math.cos(globals.realtime() * 27.3) * adaptive_chaos_random(5, 11)
-        local lr_random_tick_mod = (globals.tickcount() % 19) * adaptive_chaos_random(-3, 3)
-        result_yaw_offset = result_yaw_offset + lr_random_layer1 + lr_random_layer2 + lr_random_tick_mod
-        
-        -- 紧急模式下极端随机
-        if defensive_cache.emergency_mode then
-            result_yaw_offset = result_yaw_offset + adaptive_chaos_random(-22, 22)
-            -- 随机完全重新生成
-            if adaptive_chaos_random(1, 100) <= 20 then
-                local range_min = math.min(yaw_left, yaw_right)
-                local range_max = math.max(yaw_left, yaw_right)
-                result_yaw_offset = adaptive_chaos_random(range_min, range_max) * sign_multiplier
-            end
+
+        if clock_step >= 1 then
+            base_rotation = math.floor(base_rotation / clock_step + 0.5) * clock_step
         end
+        
+
+        if clock_jitter > 0 then
+            base_rotation = base_rotation + (math.random() * 2 - 1) * clock_jitter
+        end
+        
+
+        while base_rotation > 180 do base_rotation = base_rotation - 360 end
+        while base_rotation < -180 do base_rotation = base_rotation + 360 end
+        
+        result_yaw_offset = base_rotation * sign_multiplier
     end
     
-    -- 多威胁情况下增加yaw抖动
-    if defensive_cache.multi_threat_detected then
-        result_yaw_offset = result_yaw_offset + adaptive_chaos_random(-8, 8)
-    end
-    
-    -- 角度归一化
+
     while result_yaw_offset > 180 do result_yaw_offset = result_yaw_offset - 360 end
     while result_yaw_offset < -180 do result_yaw_offset = result_yaw_offset + 360 end
-    
-    -- 记录角度变化用于模式检测
-    local angle_change = math.abs(result_yaw_offset - defensive_cache.last_angles.yaw)
-    table.insert(defensive_cache.angle_variance_history, angle_change)
-    if #defensive_cache.angle_variance_history > 8 then
-        table.remove(defensive_cache.angle_variance_history, 1)
-    end
-    
-    -- 检测角度变化是否过于规律
-    if #defensive_cache.angle_variance_history >= 6 then
-        local variance_sum = 0
-        for _, v in ipairs(defensive_cache.angle_variance_history) do
-            variance_sum = variance_sum + v
-        end
-        local avg_variance = variance_sum / #defensive_cache.angle_variance_history
-        
-        -- 如果变化过于一致，注入额外混沌
-        if avg_variance < 5 then
-            result_yaw_offset = result_yaw_offset + adaptive_chaos_random(-20, 20)
-            defensive_cache.angle_variance_history = {}
-        end
-    end
-    
-    defensive_cache.last_angles.yaw = result_yaw_offset
     
     sys.cached_yaw_mode = result_yaw_mode
     sys.cached_yaw_offset = result_yaw_offset
@@ -7369,31 +6727,28 @@ client.set_event_callback('setup_command', function(cmd)
         local freestand_side = calc_freestand_side() or 0
         
         local builder_state_items = {
-            def_tick_mode = function() return def_settings.def_tick_mode and def_settings.def_tick_mode:get() or "Custom" end,
+            def_tick_mode = function() return def_settings.def_tick_mode and def_settings.def_tick_mode:get() or "Static" end,
             def_tick_speed = function() return def_settings.def_tick_speed and def_settings.def_tick_speed:get() or 0 end,
+            def_tick_min = function() return def_settings.def_tick_min and def_settings.def_tick_min:get() or 4 end,
+            def_tick_max = function() return def_settings.def_tick_max and def_settings.def_tick_max:get() or 10 end,
+            def_tick_cycle_speed = function() return def_settings.def_tick_cycle_speed and def_settings.def_tick_cycle_speed:get() or 10 end,
             def_pitch_mode = function() return def_settings.def_pitch_mode and def_settings.def_pitch_mode:get() or "Off" end,
-            def_pitch_1 = function() return def_settings.def_pitch_1 and def_settings.def_pitch_1:get() or 0 end,
-            def_pitch_2 = function() return def_settings.def_pitch_2 and def_settings.def_pitch_2:get() or 0 end,
+            def_pitch_1 = function() return def_settings.def_pitch_1 and def_settings.def_pitch_1:get() or -89 end,
+            def_pitch_2 = function() return def_settings.def_pitch_2 and def_settings.def_pitch_2:get() or 89 end,
+            def_pitch_static = function() return def_settings.def_pitch_static and def_settings.def_pitch_static:get() or 89 end,
             def_pitch_speed = function() return def_settings.def_pitch_speed and def_settings.def_pitch_speed:get() or 20 end,
-            def_pitch_jitter_min = function() return def_settings.def_pitch_jitter_min and def_settings.def_pitch_jitter_min:get() or 1 end,
-            def_pitch_jitter_max = function() return def_settings.def_pitch_jitter_max and def_settings.def_pitch_jitter_max:get() or 3 end,
+            def_pitch_jitter_delay = function() return def_settings.def_pitch_jitter_delay and def_settings.def_pitch_jitter_delay:get() or 2 end,
+            def_pitch_wave_type = function() return def_settings.def_pitch_wave_type and def_settings.def_pitch_wave_type:get() or "Sine" end,
+            def_pitch_wave_period = function() return def_settings.def_pitch_wave_period and def_settings.def_pitch_wave_period:get() or 30 end,
             def_yaw_mode = function() return def_settings.def_yaw_mode and def_settings.def_yaw_mode:get() or "Off" end,
-            def_yaw_offset = function() return def_settings.def_yaw_offset and def_settings.def_yaw_offset:get() or 0 end,
-            def_yaw_left = function() return def_settings.def_yaw_left and def_settings.def_yaw_left:get() or 0 end,
-            def_yaw_right = function() return def_settings.def_yaw_right and def_settings.def_yaw_right:get() or 0 end,
+            def_yaw_static = function() return def_settings.def_yaw_static and def_settings.def_yaw_static:get() or 0 end,
+            def_yaw_min = function() return def_settings.def_yaw_min and def_settings.def_yaw_min:get() or -90 end,
+            def_yaw_max = function() return def_settings.def_yaw_max and def_settings.def_yaw_max:get() or 90 end,
             def_yaw_speed = function() return def_settings.def_yaw_speed and def_settings.def_yaw_speed:get() or 20 end,
-            def_jitter_delay_min = function() return def_settings.def_jitter_delay_min and def_settings.def_jitter_delay_min:get() or 1 end,
-            def_jitter_delay_max = function() return def_settings.def_jitter_delay_max and def_settings.def_jitter_delay_max:get() or 3 end,
-            def_3way_angle1 = function() return def_settings.def_3way_angle1 and def_settings.def_3way_angle1:get() or -60 end,
-            def_3way_angle2 = function() return def_settings.def_3way_angle2 and def_settings.def_3way_angle2:get() or 0 end,
-            def_3way_angle3 = function() return def_settings.def_3way_angle3 and def_settings.def_3way_angle3:get() or 60 end,
-            def_3way_delay = function() return def_settings.def_3way_delay and def_settings.def_3way_delay:get() or 2 end,
-            def_5way_angle1 = function() return def_settings.def_5way_angle1 and def_settings.def_5way_angle1:get() or -90 end,
-            def_5way_angle2 = function() return def_settings.def_5way_angle2 and def_settings.def_5way_angle2:get() or -45 end,
-            def_5way_angle3 = function() return def_settings.def_5way_angle3 and def_settings.def_5way_angle3:get() or 0 end,
-            def_5way_angle4 = function() return def_settings.def_5way_angle4 and def_settings.def_5way_angle4:get() or 45 end,
-            def_5way_angle5 = function() return def_settings.def_5way_angle5 and def_settings.def_5way_angle5:get() or 90 end,
-            def_5way_delay = function() return def_settings.def_5way_delay and def_settings.def_5way_delay:get() or 2 end
+            def_yaw_jitter_delay = function() return def_settings.def_yaw_jitter_delay and def_settings.def_yaw_jitter_delay:get() or 2 end,
+            def_yaw_cycle_invert = function() return def_settings.def_yaw_cycle_invert and def_settings.def_yaw_cycle_invert:get() or false end,
+            def_yaw_clock_step = function() return def_settings.def_yaw_clock_step and def_settings.def_yaw_clock_step:get() or 30 end,
+            def_yaw_clock_jitter = function() return def_settings.def_yaw_clock_jitter and def_settings.def_yaw_clock_jitter:get() or 15 end
         }
         
         if should_use_defensive_with_speed(builder_state_items, player_state.defensive_ticks_left) then
@@ -7428,6 +6783,7 @@ client.set_event_callback('setup_command', function(cmd)
         cmd.force_defensive = true
     end
 end)
+
 
 local function update_shift()
     local player_state = global_anti_prediction.player_state
@@ -8389,14 +7745,7 @@ local function add_console_log(r, g, b, text)
     end
 end
 
-function test_log()
-    local r, g, b, a = get_color_value(menu.visual.logs_color_hit)
-    local text = 'Hit ${TestPlayer} in ${head} for ${100} damage (${50} hp remaining | hc: ${85%} | bt: ${2t})'
-    text = format_log_text(text, to_hex(r, g, b, a), 'c8c8c8ff')
-    add_screen_log(r, g, b, a, text)
-    add_notify_log(255, 255, 255, 255, text)
-    add_console_log(255, 255, 255, text)
-end
+
 
 local function paint_notify_logs()
     local dt = globals.frametime()
@@ -9044,6 +8393,94 @@ function grenade_radius.paint()
     end
 end
 client.set_event_callback('paint', grenade_radius.paint)
+
+
+local grenade_trail = {}
+grenade_trail.histories = {}
+
+function grenade_trail.draw_enhanced_line(x1, y1, x2, y2, r, g, b, a, thickness, glow)
+    if a <= 0 then return end
+    local final_alpha = a
+    if thickness == 0 then
+        final_alpha = a * 0.4
+        renderer.line(x1, y1, x2, y2, r, g, b, final_alpha)
+    else
+        for i = 0, thickness - 1 do
+            renderer.line(x1 + i, y1, x2 + i, y2, r, g, b, a)
+        end
+    end
+    if glow > 0 then
+        for i = 1, glow do
+            local glow_a = math.floor(final_alpha * (1 - (i / glow)^0.6) * 0.15)
+            if glow_a > 0 then
+                renderer.line(x1, y1 - i, x2, y2 - i, r, g, b, glow_a)
+                renderer.line(x1, y1 + i, x2, y2 + i, r, g, b, glow_a)
+                renderer.line(x1 - i, y1, x2 - i, y2, r, g, b, glow_a)
+                renderer.line(x1 + i, y1, x2 + i, y2, r, g, b, glow_a)
+            end
+        end
+    end
+end
+
+function grenade_trail.paint()
+    if not get_menu_value(menu.visual.grenade_trail) then return end
+    local r, g, b, a_base = get_color_value(menu.visual.grenade_trail_color)
+    local thickness = get_menu_value(menu.visual.grenade_trail_thickness)
+    local glow = get_menu_value(menu.visual.grenade_trail_glow)
+    local max_lifetime = get_menu_value(menu.visual.grenade_trail_fade) / 10
+    local curtime = globals.curtime()
+    local classes = {
+        "CBaseCSGrenadeProjectile", 
+        "CSmokeGrenadeProjectile", 
+        "CMolotovProjectile", 
+        "CIncendiaryGrenadeProjectile", 
+        "CDecoyProjectile"
+    }
+    local active_ents = {}
+    for i = 1, #classes do
+        local found = entity.get_all(classes[i])
+        if found then
+            for j = 1, #found do active_ents[found[j]] = true end
+        end
+    end
+    for ent, path in pairs(grenade_trail.histories) do
+        if active_ents[ent] then
+            local x, y, z = entity.get_prop(ent, "m_vecOrigin")
+            if x then
+                table.insert(path, {x = x, y = y, z = z, time = curtime})
+            end
+        end
+        if #path > 1 then
+            for i = #path, 2, -1 do
+                local p1, p2 = path[i-1], path[i]
+                local age = curtime - p1.time
+                local time_factor = 1 - (age / max_lifetime)
+                if time_factor > 0 then
+                    local dynamic_alpha = math.floor(a_base * time_factor)
+                    local sx1, sy1 = renderer.world_to_screen(p1.x, p1.y, p1.z)
+                    local sx2, sy2 = renderer.world_to_screen(p2.x, p2.y, p2.z)
+                    if sx1 and sx2 then
+                        grenade_trail.draw_enhanced_line(sx1, sy1, sx2, sy2, r, g, b, dynamic_alpha, thickness, glow)
+                    end
+                else
+                    table.remove(path, i-1)
+                end
+            end
+        end
+        if not active_ents[ent] and #path <= 1 then
+            grenade_trail.histories[ent] = nil
+        end
+    end
+    for ent, _ in pairs(active_ents) do
+        if not grenade_trail.histories[ent] then
+            grenade_trail.histories[ent] = {}
+        end
+    end
+end
+
+client.set_event_callback('paint', grenade_trail.paint)
+client.set_event_callback('round_start', function() grenade_trail.histories = {} end)
+
 local autobuy_module = {}
 autobuy_module.commands = {
     ["AWP"] = "buy awp", ["SCAR20/G3SG1"] = "buy scar20", ["Scout"] = "buy ssg08", ["M4/AK47"] = "buy m4a1",
@@ -9261,6 +8698,240 @@ client.set_event_callback('setup_command', function(cmd)
     if not me or not entity.is_alive(me) then return end
     hideshots_module.main(cmd)
 end)
+
+
+local lethal_module = {
+    active = false,
+    last_target_hp = 0,
+    original_baim = nil,
+    original_sp = nil,
+    original_dmg = nil,
+    original_dmg_hotkey = nil,
+}
+
+function lethal_module.get_threat_hp()
+    local enemies = entity.get_players(true)
+    if not enemies then return nil end
+    
+    local me = entity.get_local_player()
+    if not me then return nil end
+    
+    local eye_x, eye_y, eye_z = client.eye_position()
+    local closest_hp = nil
+    local closest_dist = math.huge
+    
+    for _, enemy in ipairs(enemies) do
+        if entity.is_alive(enemy) and not entity.is_dormant(enemy) then
+            local hp = entity.get_prop(enemy, "m_iHealth")
+            local ex, ey, ez = entity.get_origin(enemy)
+            if ex and hp then
+                local dist = math.sqrt((eye_x - ex)^2 + (eye_y - ey)^2 + (eye_z - ez)^2)
+                if dist < closest_dist then
+                    closest_dist = dist
+                    closest_hp = hp
+                end
+            end
+        end
+    end
+    return closest_hp
+end
+
+function lethal_module.save_original()
+    if rage_refs.force_baim then
+        lethal_module.original_baim = ui.get(rage_refs.force_baim)
+    end
+    if rage_refs.force_sp then
+        lethal_module.original_sp = ui.get(rage_refs.force_sp)
+    end
+    if rage_refs.min_damage[1] and rage_refs.min_damage[3] then
+        lethal_module.original_dmg_enabled = ui.get(rage_refs.min_damage[1])
+        lethal_module.original_dmg = ui.get(rage_refs.min_damage[3])
+    end
+end
+
+function lethal_module.restore_original()
+    if not lethal_module.active then return end
+    
+    if rage_refs.force_baim and lethal_module.original_baim ~= nil then
+        ui.set(rage_refs.force_baim, lethal_module.original_baim)
+    end
+    if rage_refs.force_sp and lethal_module.original_sp ~= nil then
+        ui.set(rage_refs.force_sp, lethal_module.original_sp)
+    end
+    if rage_refs.min_damage[1] and rage_refs.min_damage[3] then
+        if lethal_module.original_dmg_enabled ~= nil then
+            ui.set(rage_refs.min_damage[1], lethal_module.original_dmg_enabled)
+        end
+        if lethal_module.original_dmg ~= nil then
+            ui.set(rage_refs.min_damage[3], lethal_module.original_dmg)
+        end
+    end
+    lethal_module.active = false
+end
+
+function lethal_module.apply_lethal(target_hp)
+    if not lethal_module.active then
+        lethal_module.save_original()
+        lethal_module.active = true
+    end
+    
+
+    if menu.ragebot.lethal_auto_baim:get() and rage_refs.force_baim then
+        ui.set(rage_refs.force_baim, true)
+    end
+    
+
+    if menu.ragebot.lethal_safe_point:get() and rage_refs.force_sp then
+        ui.set(rage_refs.force_sp, true)
+    end
+    
+
+    if menu.ragebot.lethal_auto_damage:get() and rage_refs.min_damage[1] and rage_refs.min_damage[3] then
+        local lethal_dmg = math.min(target_hp + 5, 130)
+        ui.set(rage_refs.min_damage[1], true)
+        ui.set(rage_refs.min_damage[3], lethal_dmg)
+    end
+end
+
+function lethal_module.main()
+    if not menu.ragebot.lethal_enabled:get() then
+        lethal_module.restore_original()
+        return
+    end
+    
+    local me = entity.get_local_player()
+    if not me or not entity.is_alive(me) then
+        lethal_module.restore_original()
+        return
+    end
+    
+    local target_hp = lethal_module.get_threat_hp()
+    if not target_hp then
+        lethal_module.restore_original()
+        return
+    end
+    
+    local hp_threshold = menu.ragebot.lethal_hp_threshold:get()
+    
+    if target_hp <= hp_threshold then
+        lethal_module.apply_lethal(target_hp)
+        lethal_module.last_target_hp = target_hp
+    else
+        lethal_module.restore_original()
+    end
+end
+
+client.set_event_callback('run_command', function(cmd)
+    lethal_module.main()
+end)
+
+
+local fakelag_module = {
+    cycle_value = 1,
+    cycle_direction = 1,
+    cycle_counter = 0,
+    original_limit = nil,
+}
+
+function fakelag_module.is_fake_duck_active()
+
+    if rage_refs.duck_peek_assist then
+        local fd_value = rage_refs.duck_peek_assist:get()
+        if fd_value then
+            return true
+        end
+    end
+    return false
+end
+
+function fakelag_module.is_exploit_active()
+
+    if fakelag_module.is_fake_duck_active() then
+        return false
+    end
+    
+
+    if rage_refs.double_tap[2] and ui.get(rage_refs.double_tap[2]) then
+        return true
+    end
+
+    if onshot_antiaim_ref[2] and ui.get(onshot_antiaim_ref[2]) then
+        return true
+    end
+    return false
+end
+
+function fakelag_module.calculate_limit()
+    local mode = menu.ragebot.fakelag_mode:get()
+    local limit = 1
+    
+    if mode == "Static" then
+        limit = menu.ragebot.fakelag_limit:get()
+    elseif mode == "Fluctuate" then
+        local base_limit = menu.ragebot.fakelag_limit:get()
+
+        if globals.tickcount() % 17 == 0 then
+            limit = 1
+        else
+            limit = base_limit
+        end
+    elseif mode == "Random" then
+        local min_val = menu.ragebot.fakelag_min:get()
+        local max_val = menu.ragebot.fakelag_max:get()
+        limit = client.random_int(min_val, max_val)
+    elseif mode == "Cycle" then
+        local min_val = menu.ragebot.fakelag_min:get()
+        local max_val = menu.ragebot.fakelag_max:get()
+        local step = menu.ragebot.fakelag_step:get()
+        
+        fakelag_module.cycle_counter = fakelag_module.cycle_counter + 1
+        if fakelag_module.cycle_counter >= step then
+            fakelag_module.cycle_counter = 0
+            fakelag_module.cycle_value = fakelag_module.cycle_value + fakelag_module.cycle_direction
+            
+            if fakelag_module.cycle_value >= max_val then
+                fakelag_module.cycle_value = max_val
+                fakelag_module.cycle_direction = -1
+            elseif fakelag_module.cycle_value <= min_val then
+                fakelag_module.cycle_value = min_val
+                fakelag_module.cycle_direction = 1
+            end
+        end
+        limit = fakelag_module.cycle_value
+    end
+    
+    return math.max(1, math.min(14, limit))
+end
+
+function fakelag_module.main()
+    if not menu.ragebot.fakelag_enabled:get() then
+        return
+    end
+    
+    local me = entity.get_local_player()
+    if not me or not entity.is_alive(me) then
+        return
+    end
+    
+
+    if menu.ragebot.fakelag_disable_exploit:get() and fakelag_module.is_exploit_active() then
+        if fakelag_refs.enabled_and_limit[1] then
+            ui.set(fakelag_refs.enabled_and_limit[1], 1)
+        end
+        return
+    end
+    
+
+    local limit = fakelag_module.calculate_limit()
+    if fakelag_refs.enabled_and_limit[1] then
+        ui.set(fakelag_refs.enabled_and_limit[1], limit)
+    end
+end
+
+client.set_event_callback('run_command', function()
+    fakelag_module.main()
+end)
+
 local clantag_module = {}
 local clantag_last_frame = 0
 local function build_clantag_frames(text)
@@ -9329,6 +9000,8 @@ client.set_event_callback('shutdown', function()
     client.set_cvar('cl_righthand', '1')
     ui.set(scope_overlay_ref[1], false)
 end)
+
+do
 local da = {
     visible = client.visible,
     eye_position = client.eye_position,
@@ -9440,82 +9113,7 @@ local function da_in_list(list, ent)
     end
     return false
 end
-local function da_on_setup_command(cmd)
-    local hitboxes = da.config.hitboxes
-    local accurate_history = {}
-    local tick = da.tickcount()
-    if tick - da.last_seen_cleanup_tick > 128 then
-        da.last_seen_cleanup_tick = tick
-        local new_last_seen = {}
-        local count = 0
-        for i, v in ipairs(da.last_seen) do
-            if tick - v[2] < 512 and count < 64 then
-                count = count + 1
-                new_last_seen[count] = v
-            end
-        end
-        da.last_seen = new_last_seen
-        da.target_flags = {}
-    end
-    local enemies = da_get_enemies()
-    for _, ent in ipairs(enemies) do
-        local _, _, _, _, alpha = entity.get_bounding_box(ent)
-        if alpha < 1 then
-            if not da_in_list(da.last_seen, ent) and #da.last_seen < 64 then
-                da.last_seen[#da.last_seen + 1] = { ent, tick }
-            end
-        elseif da_in_list(da.last_seen, ent) then
-            for i = #da.last_seen, 1, -1 do
-                if da.last_seen[i][1] == ent then
-                    table.remove(da.last_seen, i)
-                    break
-                end
-            end
-        end
-    end
-    if not menu.ragebot.dormant_aimbot:get() then return end
-    local me = da.get_local_player()
-    local weapon = da.get_player_weapon(me)
-    if not weapon then return end
-    local weapon_ptr = native.GetClientEntity(weapon)
-    if not weapon_ptr then return end
-    if not da_can_fire_fn(weapon_ptr) then return end
-    local spread = da_get_spread_fn(weapon_ptr)
-    if not spread then return end
-    local eye_pos = vector(da.eye_position())
-    local sim_time = da.get_prop(me, "m_flSimulationTime")
-    local tick = da.tickcount()
-    local weapon_info = da.csgo_weapons(weapon)
-    local is_scoped = da.get_prop(me, "m_bIsScoped") == 1
-    local on_ground = bit.band(da.get_prop(me, "m_fFlags"), bit.lshift(1, 0))
-    local dormant_enemies = da_get_dormant_enemies()
-    if #dormant_enemies == 0 then
-        da.target_flags = {}
-        da.current_index = 1
-        return
-    end
-    if da.current_index > #dormant_enemies then
-        da.current_index = 1
-    elseif tick % #dormant_enemies ~= 0 then
-        da.current_index = ((da.current_index) % #dormant_enemies) + 1
-    end
-    local target = dormant_enemies[da.current_index]
-    if not target then
-        da.target_flags = {}
-        return
-    end
-    if tick < da.freeze_end_tick then
-        da.target_flags = {}
-        return
-    end
-    if weapon_info.type == "grenade" or weapon_info.type == "knife" then
-        da.target_flags = {}
-        return
-    end
-    if cmd.in_jump == 1 and on_ground == 0 then
-        da.target_flags = {}
-        return
-    end
+local function da_process_dormant_target(cmd, target, hitboxes, me, weapon, weapon_info, eye_pos, sim_time, tick, spread, is_scoped, on_ground)
     local target_hitboxes = {}
     local accuracy_threshold = da.config.accuracy
     local target_health = entity.get_esp_data(target).health
@@ -9562,6 +9160,7 @@ local function da_on_setup_command(cmd)
     local hitbox_pos = vector(da.hitbox_position(target, 4))
     local _, _, _, _, bbox_alpha = entity.get_bounding_box(target)
     da.target_flags[target] = nil
+    local accurate_history = {}
     for i = 1, 7 do
         if #hitboxes ~= 0 and da_contains(hitboxes, da.hitbox_index_map[i - 1]) and da.is_alive(target) and bbox_alpha > 0 and math.abs(origin.x - hitbox_pos.x) < 7 then
             local hb_pos = vector(da.hitbox_position(target, i - 1))
@@ -9639,12 +9238,95 @@ local function da_on_setup_command(cmd)
         end
     end
 end
+local function da_on_setup_command(cmd)
+    local hitboxes = da.config.hitboxes
+    local tick = da.tickcount()
+    if tick - da.last_seen_cleanup_tick > 128 then
+        da.last_seen_cleanup_tick = tick
+        local new_last_seen = {}
+        local count = 0
+        for i, v in ipairs(da.last_seen) do
+            if tick - v[2] < 512 and count < 64 then
+                count = count + 1
+                new_last_seen[count] = v
+            end
+        end
+        da.last_seen = new_last_seen
+        da.target_flags = {}
+    end
+    local enemies = da_get_enemies()
+    for _, ent in ipairs(enemies) do
+        local _, _, _, _, alpha = entity.get_bounding_box(ent)
+        if alpha < 1 then
+            if not da_in_list(da.last_seen, ent) and #da.last_seen < 64 then
+                da.last_seen[#da.last_seen + 1] = { ent, tick }
+            end
+        elseif da_in_list(da.last_seen, ent) then
+            for i = #da.last_seen, 1, -1 do
+                if da.last_seen[i][1] == ent then
+                    table.remove(da.last_seen, i)
+                    break
+                end
+            end
+        end
+    end
+    if not menu.ragebot.dormant_aimbot:get() then return end
+    local me = da.get_local_player()
+    local weapon = da.get_player_weapon(me)
+    if not weapon then return end
+    local weapon_ptr = native.GetClientEntity(weapon)
+    if not weapon_ptr then return end
+    if not da_can_fire_fn(weapon_ptr) then return end
+    local spread = da_get_spread_fn(weapon_ptr)
+    if not spread then return end
+    local eye_pos = vector(da.eye_position())
+    local sim_time = da.get_prop(me, "m_flSimulationTime")
+    local tick = da.tickcount()
+    local weapon_info = da.csgo_weapons(weapon)
+    local is_scoped = da.get_prop(me, "m_bIsScoped") == 1
+    local on_ground = bit.band(da.get_prop(me, "m_fFlags"), bit.lshift(1, 0))
+    local dormant_enemies = da_get_dormant_enemies()
+    if #dormant_enemies == 0 then
+        da.target_flags = {}
+        da.current_index = 1
+        return
+    end
+    if da.current_index > #dormant_enemies then
+        da.current_index = 1
+    elseif tick % #dormant_enemies ~= 0 then
+        da.current_index = ((da.current_index) % #dormant_enemies) + 1
+    end
+    local target = dormant_enemies[da.current_index]
+    if not target then
+        da.target_flags = {}
+        return
+    end
+    if tick < da.freeze_end_tick then
+        da.target_flags = {}
+        return
+    end
+    if weapon_info.type == "grenade" or weapon_info.type == "knife" then
+        da.target_flags = {}
+        return
+    end
+    if cmd.in_jump == 1 and on_ground == 0 then
+        da.target_flags = {}
+        return
+    end
+    da_process_dormant_target(cmd, target, hitboxes, me, weapon, weapon_info, eye_pos, sim_time, tick, spread, is_scoped, on_ground)
+end
 client.register_esp_flag("DA", 255, 255, 255, function(ent)
     if menu.ragebot.dormant_aimbot:get() and da.is_alive(da.get_local_player()) then
         return da.target_flags[ent]
     end
 end)
 client.set_event_callback("weapon_fire", function(e)
+    local me = entity.get_local_player()
+    if client.userid_to_entindex(e.userid) == me then
+        fakelag_reset.shot_fired = true
+        fakelag_reset.shot_tick = globals.tickcount()
+    end
+    
     client.delay_call(0.03, function()
         local me = da.get_local_player()
         if client.userid_to_entindex(e.userid) == me then
@@ -9699,3 +9381,4 @@ client.set_event_callback("setup_command", da_on_setup_command)
 client.set_event_callback("round_prestart", da_on_round_prestart)
 client.set_event_callback("player_hurt", da_on_player_hurt)
 ui.set(da.refs.dormantEsp, true)
+end
